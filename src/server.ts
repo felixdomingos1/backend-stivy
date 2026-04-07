@@ -11,16 +11,13 @@ dotenv.config();
 console.log('🚀 Iniciando servidor STIVY...');
 console.log(`📦 Ambiente: ${process.env.NODE_ENV || 'development'}`);
 
-// Importar Redis
 import { connectRedis, isRedisReady, getRedisClient } from './config/redis';
-import logger from './utils/logger';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import routes from './routes';
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares globais
 app.use(helmet());
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
@@ -32,8 +29,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Rota de saúde
-app.get('/health', (req, res) => {
+app.get('/health', (_, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date(),
@@ -43,8 +39,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Rota para verificar status do Redis
-app.get('/redis-status', async (req, res) => {
+app.get('/redis-status', async (_, res) => {
   try {
     const ready = isRedisReady();
     let pingResult = 'unknown';
@@ -78,35 +73,22 @@ app.get('/redis-status', async (req, res) => {
   }
 });
 
-// Rotas da API
 app.use('/api', routes);
-
-// Middleware para rotas não encontradas
 app.use(notFoundHandler);
 
-// Middleware de erro
 app.use(errorHandler);
-
-// Iniciar servidor - AGUARDAR REDIS CONECTAR
 async function startServer(): Promise<void> {
   console.log('🔄 Conectando ao Redis...');
-
-  // Aguardar conexão do Redis antes de iniciar o servidor
   const redisConnected = await connectRedis();
-
   if (redisConnected) {
     console.log('✅ Redis conectado e funcionando!');
-
-    // Teste adicional
     const client = getRedisClient();
     await client.set('stivy:startup', new Date().toISOString());
     console.log('✅ Redis testado e pronto!');
   } else {
     console.warn('⚠️ Redis NÃO conectado. O servidor continuará sem cache.');
   }
-
   console.log(`🚀 Iniciando servidor na porta ${PORT}...`);
-
   app.listen(PORT, () => {
     console.log(`
     SERVIDOR STIVY INICIADO COM SUCESSO!
