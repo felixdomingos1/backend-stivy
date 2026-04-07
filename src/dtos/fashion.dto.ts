@@ -4,6 +4,8 @@ export interface CreateServicoDto {
   categoria?: string;
   valor?: number;
   tempo_estimado?: string;
+  imagem_url?: string;
+  imagem_public_id?: string;
 }
 
 export interface UpdateServicoDto {
@@ -13,6 +15,8 @@ export interface UpdateServicoDto {
   valor?: number;
   tempo_estimado?: string;
   status?: string;
+  imagem_url?: string;
+  imagem_public_id?: string;
 }
 
 export interface AvaliarFazedorDto {

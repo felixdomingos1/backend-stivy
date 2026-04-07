@@ -12,6 +12,7 @@ import {
   listAvaliacoesValidation
 } from '../validations/fashion.validation';
 import { FashionController } from '../controller/fashion.controller';
+import { handleUploadError, uploadMultiple, uploadSingle } from '../middleware/upload.middleware';
 
 const router = Router();
 const fashionController = new FashionController();
@@ -30,6 +31,8 @@ router.get('/servicos/:id',
 
 router.post('/servicos',
   autenticar,
+  uploadSingle,
+  handleUploadError,
   createServicoValidation,
   validate,
   invalidateOnWrite(['list:*/api/fashion/servicos*']),
@@ -38,6 +41,8 @@ router.post('/servicos',
 
 router.put('/servicos/:id',
   autenticar,
+  uploadSingle,
+  handleUploadError,
   updateServicoValidation,
   validate,
   invalidateOnWrite(['list:*/api/fashion/servicos*', 'detail:*/api/fashion/servicos/*']),
@@ -49,6 +54,49 @@ router.delete('/servicos/:id',
   validate,
   invalidateOnWrite(['list:*/api/fashion/servicos*', 'detail:*/api/fashion/servicos/*']),
   fashionController.removerServico.bind(fashionController)
+);
+
+router.post('/portfolio/imagens',
+  autenticar,
+  uploadMultiple,
+  handleUploadError,
+  fashionController.adicionarPortfolio.bind(fashionController)
+);
+
+router.get('/portfolio',
+  autenticar,
+  fashionController.listarPortfolio.bind(fashionController)
+);
+
+router.delete('/portfolio/:id',
+  autenticar,
+  fashionController.removerImagemPortfolio.bind(fashionController)
+);
+
+router.put('/portfolio/reordenar',
+  autenticar,
+  fashionController.reordenarPortfolio.bind(fashionController)
+);
+
+router.post('/servicos/:id/imagens',
+  autenticar,
+  uploadMultiple,
+  handleUploadError,
+  fashionController.adicionarImagensServico.bind(fashionController)
+);
+
+router.get('/servicos/:id/imagens',
+  fashionController.listarImagensServico.bind(fashionController)
+);
+
+router.delete('/servicos/imagens/:id_imagem',
+  autenticar,
+  fashionController.removerImagemServico.bind(fashionController)
+);
+
+router.put('/servicos/:id/imagens/principal/:id_imagem',
+  autenticar,
+  fashionController.definirImagemPrincipal.bind(fashionController)
 );
 
 router.get('/fazedores',
@@ -80,7 +128,7 @@ router.get('/fazedores/:id/avaliacoes',
   fashionController.listarAvaliacoesDoFazedor.bind(fashionController)
 );
 
-router.post('/avaliacoes/:id_fazedor',
+router.post('/avaliacoes',
   autenticar,
   createAvaliacaoValidation,
   validate,

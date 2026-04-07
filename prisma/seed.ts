@@ -4,24 +4,18 @@ import prisma from '../src/config/database';
 async function main() {
   console.log('🌱 Iniciando seed...');
 
-  const adminSenha = await hashSenha('admin123');
+  const adminSenha = await hashSenha('sistem123!@#');
 
   await prisma.usuario.upsert({
-    where: { email: 'admin@stivy.com' },
+    where: { email: 'superadmin@stivy.com' },
     update: {},
     create: {
-      nome: 'Administrador',
-      email: 'admin@stivy.com',
+      nome: 'Stivy Admin',
+      email: 'superadmin@stivy.com',
       senha_hash: adminSenha,
       telefone: '999999999',
-      tipo: 'fazedor',
+      tipo: 'sistem_admin',
       status: 'ativo',
-      fazedor: {
-        create: {
-          tipo_fazedor: 'agencia',
-          status_aprovacao: 'aprovado'
-        }
-      }
     }
   });
 

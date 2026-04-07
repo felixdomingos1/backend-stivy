@@ -6,6 +6,7 @@ import fashionRoutes from './fashion.routes';
 import eventRoutes from './event.routes';
 import requestRoutes from './request.routes';
 import notificationRoutes from './notification.routes';
+import storyRoutes from './story.routes';
 
 const router = Router();
 
@@ -15,7 +16,8 @@ router.use('/fashion', fashionRoutes);
 router.use('/events', eventRoutes);
 router.use('/requests', requestRoutes);
 router.use('/notifications', notificationRoutes);
- 
+router.use('/stories', storyRoutes);
+
 router.get('/health', (req, res) => {
   res.json({
     status: 'OK',

@@ -6,7 +6,7 @@ import { FazedorRepository } from '../repositories/fazedor.repository';
 import { hashSenha, compararSenha } from '../utils/bcrypt';
 import { gerarToken } from '../utils/jwt';
 import logger from '../utils/logger';
-import { ValidationError, AuthenticationError } from '../utils/errors';
+import { ValidationError, AuthenticationError, AuthorizationError } from '../utils/errors';
 import { EmailService } from './email.service';
 import { OTPService } from './otp.service';
 
@@ -28,6 +28,9 @@ export class AuthService implements IAuthService {
       throw new ValidationError('Email já cadastrado');
     }
 
+    if (dto.tipo === 'fazedor' && !dto.tipo_fazedor) {
+      throw new AuthorizationError('Precisas enviar o tipo de fazedor')
+    }
     const hashedPassword = await hashSenha(dto.senha);
     const otpCode = this.otpService.generateOTP();
     const otpExpiration = this.otpService.getExpirationDate();
@@ -46,6 +49,7 @@ export class AuthService implements IAuthService {
     });
 
     let fazedor = null;
+
     if (dto.tipo === 'fazedor' && dto.tipo_fazedor) {
       fazedor = await this.fazedorRepository.createFazedor({
         id_usuario: user.id_usuario,
@@ -269,7 +273,7 @@ export class AuthService implements IAuthService {
       throw new ValidationError('Email não encontrado');
     }
 
-    const maxAttempts = 5;
+    const maxAttempts = 3;
     const attempts = user.reset_password_attempts || 0;
 
     if (attempts >= maxAttempts) {

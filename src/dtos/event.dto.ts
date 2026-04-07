@@ -9,6 +9,8 @@ export interface CreateEventoDto {
   tipo_evento: string;
   vagas_disponiveis?: number;
   valor_ingresso?: number;
+  imagem_url?: string;
+  imagem_public_id?: string;
 }
 
 export interface UpdateEventoDto {

@@ -80,24 +80,19 @@ export class FazedorRepository {
     });
   }
 
-  // NOVA FUNÇÃO: findAll com filtros
   async findAll(filters?: FazedorFilters, skip?: number, take?: number): Promise<any[]> {
     const where: any = {};
 
-    // Filtrar por tipo de fazedor
     if (filters?.tipo_fazedor) {
       where.tipo_fazedor = filters.tipo_fazedor;
     }
 
-    // Filtrar por status de aprovação (apenas aprovados para listagem pública)
     if (filters?.status_aprovacao) {
       where.status_aprovacao = filters.status_aprovacao;
     } else {
-      // Por padrão, mostrar apenas aprovados
       where.status_aprovacao = 'aprovado';
     }
 
-    // Filtrar por avaliação mínima
     if (filters?.avaliacao_minima !== undefined) {
       where.avaliacao_media = {
         gte: filters.avaliacao_minima

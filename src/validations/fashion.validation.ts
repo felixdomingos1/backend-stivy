@@ -159,7 +159,7 @@ export const getFazedorByIdValidation = [
 
 // Validações para Avaliações
 export const createAvaliacaoValidation = [
-  param('id_fazedor')
+  body('id_fazedor')
     .isUUID()
     .withMessage('ID do fazedor inválido'),
 

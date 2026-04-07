@@ -3,6 +3,7 @@ export interface UpdateUserDto {
   telefone?: string;
   foto_perfil?: string;
   bio?: string;
+  foto_perfil_public_id?: string;
 }
 
 export interface UpdatePasswordDto {

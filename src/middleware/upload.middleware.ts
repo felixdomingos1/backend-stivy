@@ -1,47 +1,16 @@
+import multer from 'multer';
 import { Request, Response, NextFunction } from 'express';
-import multer, { FileFilterCallback } from 'multer';
-import path from 'path';
-import fs from 'fs';
+import { cloudinaryService } from '../services/cloudinary.service';
 
-const uploadDir = process.env.UPLOAD_PATH || './uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+const storage = multer.memoryStorage();
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let folder = uploadDir;
-
-    if (file.fieldname === 'foto_perfil') {
-      folder = path.join(uploadDir, 'perfil');
-    } else if (file.fieldname === 'foto_servico') {
-      folder = path.join(uploadDir, 'servicos');
-    } else if (file.fieldname === 'foto_evento') {
-      folder = path.join(uploadDir, 'eventos');
-    } else if (file.fieldname === 'portfolio') {
-      folder = path.join(uploadDir, 'portfolio');
-    }
-
-    if (!fs.existsSync(folder)) {
-      fs.mkdirSync(folder, { recursive: true });
-    }
-
-    cb(null, folder);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-  }
-});
-
-const fileFilter = (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+const fileFilter = (_: any, file: any, cb: any) => {
   const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Tipo de arquivo não suportado. Use JPEG, PNG, WEBP ou GIF.'));
+    cb(new Error('Tipo de arquivo não suportado. Use JPEG, PNG, WEBP ou GIF.'), false);
   }
 };
 
@@ -50,7 +19,7 @@ const upload = multer({
   fileFilter,
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880'),
-    files: 5
+    files: 10
   }
 });
 
@@ -58,42 +27,81 @@ export const uploadFotoPerfil = upload.single('foto_perfil');
 export const uploadFotosServico = upload.array('fotos', 5);
 export const uploadFotosEvento = upload.array('fotos', 10);
 export const uploadPortfolio = upload.array('portfolio', 20);
+export const uploadSingle = upload.single('imagem');
+export const uploadMultiple = upload.array('imagens', 10);
 
-// Middleware para tratar erros de upload
-export const handleUploadError = (err: any, req: Request, res: Response, next: NextFunction) => {
+export const handleUploadError = (
+  err: any,
+  _: Request,
+  res: Response,
+  next: NextFunction
+) => {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'FILE_TOO_LARGE') {
-      return res.status(400).json({ error: 'Arquivo muito grande. Máximo 5MB.' });
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        error: 'Arquivo muito grande. Máximo 5MB.'
+      });
     }
+
     if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({ error: 'Número máximo de arquivos excedido.' });
+      return res.status(400).json({
+        success: false,
+        error: 'Número máximo de arquivos excedido.'
+      });
     }
-    return res.status(400).json({ error: err.message });
+
+    return res.status(400).json({
+      success: false,
+      error: err.message
+    });
   }
 
   if (err) {
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({
+      success: false,
+      error: err.message
+    });
   }
 
-  next();
+  return next();
 };
+export const processUpload = async (
+  file: Express.Multer.File,
+  folder: string,
+  options?: {
+    width?: number;
+    height?: number;
+    quality?: number;
+  }
+) => {
+  if (!file) return null;
 
-// Função para deletar arquivo
-export const deleteFile = (filePath: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    fs.unlink(filePath, (err) => {
-      if (err && err.code !== 'ENOENT') {
-        reject(err);
-      } else {
-        resolve();
-      }
-    });
+  const result = await cloudinaryService.uploadBuffer(file.buffer, {
+    folder,
+    width: options?.width,
+    height: options?.height,
+    quality: options?.quality || 90
   });
+
+  return {
+    public_id: result.public_id,
+    url: result.secure_url,
+    thumbnail: cloudinaryService.getThumbnailUrl(result.public_id)
+  };
 };
 
-// Função para gerar URL pública
-export const getPublicUrl = (filename: string, folder: string = ''): string => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-  const uploadPath = process.env.UPLOAD_PATH || '/uploads';
-  return `${baseUrl}${uploadPath}/${folder}${filename}`;
+export const processMultipleUploads = async (
+  files: Express.Multer.File[],
+  folder: string,
+  options?: {
+    width?: number;
+    height?: number;
+    quality?: number;
+  }
+) => {
+  if (!files || files.length === 0) return [];
+
+  const uploadPromises = files.map(file => processUpload(file, folder, options));
+  return await Promise.all(uploadPromises);
 };

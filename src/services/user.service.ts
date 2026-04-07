@@ -110,26 +110,25 @@ export class UserService {
       throw new AuthenticationError('Senha atual incorreta');
     }
 
-    // Hash da nova senha
     const hashedPassword = await hashSenha(dto.nova_senha);
-
-    // Atualizar senha
     await this.userRepository.updatePassword(userId, hashedPassword);
-
     logger.info(`Senha atualizada para usuário: ${user.email}`);
   }
 
-  async updateFotoPerfil(userId: string, fotoUrl: string): Promise<{ foto_perfil: string }> {
-    const user = await this.userRepository.findById(userId);
-    if (!user) {
-      throw new NotFoundError('Usuário não encontrado');
+  async updateFotoPerfil(userId: string, fotoUrl: string, publicId: string): Promise<any> {
+    try {
+      const updatedUser = await this.userRepository.update(userId, {
+        foto_perfil: fotoUrl,
+        foto_perfil_public_id: publicId
+      });
+
+      return {
+        foto_perfil_url: updatedUser.foto_perfil,
+        foto_perfil_public_id: updatedUser.foto_perfil_public_id
+      };
+    } catch (error:any) {
+      throw new Error(`Erro ao atualizar foto de perfil: ${error.message}`);
     }
-
-    await this.userRepository.updateFotoPerfil(userId, fotoUrl);
-
-    logger.info(`Foto de perfil atualizada para usuário: ${user.email}`);
-
-    return { foto_perfil: fotoUrl };
   }
 
   async listFavoritos(userId: string): Promise<any[]> {

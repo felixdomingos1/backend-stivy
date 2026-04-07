@@ -14,6 +14,8 @@ export class FashionService {
   ) { }
 
   async createServico(fazedorId: string, dto: CreateServicoDto): Promise<any> {
+    console.log(fazedorId, dto);
+
     const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorId);
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
@@ -24,7 +26,7 @@ export class FashionService {
     }
 
     const servico = await this.servicoRepository.create({
-      id_fazedor: fazedor.id_fazedor, // Usar id_fazedor, não o userId
+      id_fazedor: fazedor.id_fazedor,
       titulo: dto.titulo,
       descricao: dto.descricao,
       categoria: dto.categoria,
@@ -36,6 +38,17 @@ export class FashionService {
     return servico;
   }
 
+  async getFazedorByUserId(userId: string): Promise<any> {
+    try {
+      const fazedor = await this.fazedorRepository.findFazedorByUserId(userId);
+      if (!fazedor) {
+        throw new NotFoundError('Fazedor não encontrado');
+      }
+      return fazedor;
+    } catch (error) {
+      throw error;
+    }
+  }
   async getServicoById(id: string): Promise<any> {
     const servico = await this.servicoRepository.findById(id);
     if (!servico) {
@@ -97,7 +110,6 @@ export class FashionService {
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
     }
-
     const estatisticas = await this.avaliacaoRepository.getEstatisticas(fazedor.id_fazedor);
     const servicos = await this.servicoRepository.findByFazedor(fazedor.id_fazedor);
 

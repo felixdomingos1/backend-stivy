@@ -7,6 +7,8 @@ import { UpdateUserDto, UpdatePasswordDto } from '../dtos/user.dto';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { ValidationError, AuthenticationError, NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
+import { processUpload } from '../middleware/upload.middleware';
+import { cloudinaryService } from '../services/cloudinary.service';
 
 export class UserController {
   private userService: UserService;
@@ -100,29 +102,47 @@ export class UserController {
 
   async atualizarFotoPerfil(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
-
       if (!req.usuarioId) {
         res.status(401).json({ error: 'Não autorizado' });
         return;
       }
 
-      const { foto_url } = req.body;
-      if (!foto_url) {
-        res.status(400).json({ error: 'URL da foto é obrigatória' });
+      if (!req.file) {
+        res.status(400).json({ error: 'Nenhuma imagem enviada' });
         return;
       }
 
-      const result = await this.userService.updateFotoPerfil(req.usuarioId, foto_url);
+      // Upload para Cloudinary
+      const uploadResult = await processUpload(req.file, 'perfil', {
+        width: 500,
+        height: 500,
+        quality: 90
+      });
+
+      if (!uploadResult) {
+        res.status(400).json({ error: 'Erro ao fazer upload da imagem' });
+        return;
+      }
+
+      // Buscar usuário atual para deletar foto antiga
+      const user = await this.userService.getProfile(req.usuarioId);
+      if (user.foto_perfil_public_id) {
+        await cloudinaryService.deleteFile(user.foto_perfil_public_id);
+      }
+
+      const result = await this.userService.updateFotoPerfil(
+        req.usuarioId,
+        uploadResult.url,
+        uploadResult.public_id
+      );
 
       res.json({
         success: true,
         message: 'Foto de perfil atualizada com sucesso',
-        data: result
+        data: {
+          foto_perfil_url: result.foto_perfil_url,
+          foto_perfil_public_id: result.foto_perfil_public_id
+        }
       });
     } catch (error) {
       this.handleError(error, res);
