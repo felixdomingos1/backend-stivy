@@ -1,5 +1,7 @@
-import { body, query } from 'express-validator';
+// validations/fashion.validation.ts
+import { body, query, param } from 'express-validator';
 
+// Validações para Serviços
 export const createServicoValidation = [
   body('titulo')
     .notEmpty()
@@ -16,7 +18,42 @@ export const createServicoValidation = [
 
   body('categoria')
     .optional()
+    .trim()
+    .isString()
+    .withMessage('Categoria deve ser texto'),
+
+  body('valor')
+    .optional()
+    .isFloat({ min: 0, max: 999999.99 })
+    .withMessage('Valor deve ser um número positivo')
+    .toFloat(),
+
+  body('tempo_estimado')
+    .optional()
+    .trim()
+    .isString()
+    .withMessage('Tempo estimado deve ser texto')
+];
+
+export const updateServicoValidation = [
+  param('id')
     .isUUID()
+    .withMessage('ID do serviço inválido'),
+
+  body('titulo')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 100 })
+    .withMessage('Título deve ter entre 3 e 100 caracteres'),
+
+  body('descricao')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Descrição deve ter no máximo 500 caracteres'),
+
+  body('categoria')
+    .optional()
     .trim(),
 
   body('valor')
@@ -25,16 +62,19 @@ export const createServicoValidation = [
     .withMessage('Valor deve ser um número positivo')
     .toFloat(),
 
+  body('status')
+    .optional()
+    .isIn(['ativo', 'inativo', 'pausado'])
+    .withMessage('Status inválido'),
+
   body('tempo_estimado')
     .optional()
-    .isUUID()
     .trim()
 ];
 
-export const listarServicosValidation = [
+export const listServicosValidation = [
   query('categoria')
     .optional()
-    .isUUID()
     .trim(),
 
   query('min_valor')
@@ -50,57 +90,105 @@ export const listarServicosValidation = [
     .toFloat()
     .custom((max, { req }) => {
       const min = req.query && req.query.min_valor;
-      if (min && max && max < min) {
+      if (min && max && parseFloat(max) < parseFloat(min as string)) {
         throw new Error('Valor máximo deve ser maior que valor mínimo');
-      }
-      return true;
-    })
-];
-
-export const createEventoValidation = [
-  body('titulo')
-    .notEmpty()
-    .withMessage('Título é obrigatório')
-    .trim()
-    .isLength({ min: 3, max: 150 }),
-
-  body('descricao')
-    .optional()
-    .trim(),
-
-  body('data_inicio')
-    .isISO8601()
-    .withMessage('Data de início inválida')
-    .toDate(),
-
-  body('data_fim')
-    .isISO8601()
-    .withMessage('Data de fim inválida')
-    .toDate()
-    .custom((end, { req }) => {
-      if (end <= req.body.data_inicio) {
-        throw new Error('Data de fim deve ser maior que data de início');
       }
       return true;
     }),
 
-  body('tipo_evento')
-    .isIn(['desfile', 'workshop', 'casting', 'fashion_week', 'concurso', 'outro'])
-    .withMessage('Tipo de evento inválido'),
+  query('status')
+    .optional()
+    .isIn(['ativo', 'inativo', 'pausado'])
+    .withMessage('Status inválido'),
 
-  body('local')
+  query('search')
     .optional()
     .trim(),
 
-  body('vagas_disponiveis')
+  query('page')
     .optional()
-    .isInt({ min: 0 })
-    .withMessage('Vagas deve ser um número positivo')
+    .isInt({ min: 1 })
+    .withMessage('Page deve ser um número positivo')
     .toInt(),
 
-  body('valor_ingresso')
+  query('limit')
     .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Valor do ingresso deve ser positivo')
-    .toFloat()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit deve ser entre 1 e 100')
+    .toInt()
+];
+
+// Validações para Fazedores
+export const listFazedoresValidation = [
+  query('tipo_fazedor')
+    .optional()
+    .isIn(['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer'])
+    .withMessage('Tipo de fazedor inválido'),
+
+  query('status_aprovacao')
+    .optional()
+    .isIn(['pendente', 'aprovado', 'rejeitado'])
+    .withMessage('Status de aprovação inválido'),
+
+  query('avaliacao_minima')
+    .optional()
+    .isFloat({ min: 0, max: 5 })
+    .withMessage('Avaliação mínima deve ser entre 0 e 5')
+    .toFloat(),
+
+  query('search')
+    .optional()
+    .trim(),
+
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .toInt(),
+
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .toInt()
+];
+
+export const getFazedorByIdValidation = [
+  param('id')
+    .isUUID()
+    .withMessage('ID do fazedor inválido')
+];
+
+// Validações para Avaliações
+export const createAvaliacaoValidation = [
+  param('id_fazedor')
+    .isUUID()
+    .withMessage('ID do fazedor inválido'),
+
+  body('nota')
+    .notEmpty()
+    .withMessage('Nota é obrigatória')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Nota deve ser entre 1 e 5')
+    .toInt(),
+
+  body('comentario')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Comentário deve ter no máximo 500 caracteres')
+];
+
+export const listAvaliacoesValidation = [
+  param('id_fazedor')
+    .isUUID()
+    .withMessage('ID do fazedor inválido'),
+
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .toInt(),
+
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .toInt()
 ];

@@ -12,6 +12,22 @@ export class UserService {
     private fazedorRepository: FazedorRepository
   ) { }
 
+  async pegarTodos(): Promise<any[]> {
+    const users = await this.userRepository.findAll();
+
+    return users.map(user => ({
+      id: user.id_usuario,
+      nome: user.nome,
+      email: user.email,
+      telefone: user.telefone,
+      tipo: user.tipo,
+      foto_perfil: user.foto_perfil,
+      bio: user.bio,
+      data_cadastro: user.data_cadastro,
+      status: user.status
+    }));
+  }
+
   async getProfile(userId: string): Promise<any> {
     const user = await this.userRepository.findById(userId);
     if (!user) {
@@ -43,7 +59,6 @@ export class UserService {
         instagram: fazedor.instagram,
         facebook: fazedor.facebook,
         website: fazedor.website,
-        // Dados específicos por tipo
         ...(fazedor.agencia && { agencia: fazedor.agencia }),
         ...(fazedor.modeloFreelancer && { modelo: fazedor.modeloFreelancer }),
         ...(fazedor.estilista && { estilista: fazedor.estilista }),

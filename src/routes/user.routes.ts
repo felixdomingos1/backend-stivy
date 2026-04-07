@@ -1,14 +1,15 @@
 import { Router } from 'express';
-import { autenticar } from '../middleware/auth.middleware';
 import { UserController } from '../controller/user.controller';
+import { autenticar } from '../middleware/auth.middleware';
 import { favoritoIdValidation, updateFotoValidation, updatePasswordValidation, updateProfileValidation } from '../validations/auth.validation';
 
 const router = Router();
 const userController = new UserController();
 
 
-router.use(autenticar);
+router.get('/todos', userController.pegarTodos.bind(userController));
 
+router.use(autenticar);
 router.get('/perfil', userController.getPerfil.bind(userController));
 router.put('/perfil', updateProfileValidation, userController.atualizarPerfil.bind(userController));
 router.put('/senha', updatePasswordValidation, userController.atualizarSenha.bind(userController));

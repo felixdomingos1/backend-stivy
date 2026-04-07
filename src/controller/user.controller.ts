@@ -34,6 +34,19 @@ export class UserController {
     }
   }
 
+  async pegarTodos(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const users = await this.userService.pegarTodos();
+      res.json({
+        success: true,
+        count: users.length,
+        data: users
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   async atualizarPerfil(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);

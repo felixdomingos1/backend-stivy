@@ -39,9 +39,9 @@ export class UserRepository implements IUserRepository {
         email_verification_code: true,
         email_verification_expira: true,
         verification_attempts: true,
-        reset_password_attempts:true,
-        reset_password_code:true,
-        reset_password_expira:true
+        reset_password_attempts: true,
+        reset_password_code: true,
+        reset_password_expira: true
       }
     });
   }
@@ -239,5 +239,17 @@ export class UserRepository implements IUserRepository {
       }
     });
   }
-  
+
+  async findAll(): Promise<any[]> {
+    return this.prisma.usuario.findMany({
+      include: {
+        fazedor: true,
+        favoritos: true,
+        notificacoes: true,
+        requisicoes: true,
+        eventosParticipados: true,
+        avaliacoesFeitas: true
+      }
+    });
+  }
 }
