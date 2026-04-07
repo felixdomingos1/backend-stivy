@@ -3,7 +3,15 @@ import { validationResult } from 'express-validator';
 import { AuthService } from '../services/auth.service';
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
-import { RegisterUserDto, LoginDto, PasswordResetRequestDto, PasswordResetDto } from '../dtos/auth.dto';
+import {
+  RegisterUserDto,
+  LoginDto,
+  PasswordResetRequestDto,
+  PasswordResetDto,
+  VerifyEmailDto,
+  ResendOTPDto,
+  RequestPasswordResetDto
+} from '../dtos/auth.dto';
 import { AuthRequest } from '../middleware/auth.middleware';
 import logger from '../utils/logger';
 import { AuthenticationError, ValidationError } from '../utils/errors';
@@ -16,6 +24,7 @@ export class AuthController {
     const fazedorRepository = new FazedorRepository();
     this.authService = new AuthService(userRepository, fazedorRepository);
   }
+
 
   async registrar(req: Request, res: Response): Promise<void> {
     try {
@@ -34,6 +43,40 @@ export class AuthController {
     }
   }
 
+
+  async verificarEmail(req: Request, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+      const { userId, codigo } = req.body as VerifyEmailDto;
+      const result = await this.authService.verifyEmail({ userId, codigo });
+      res.json(result);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+
+  async reenviarOTP(req: Request, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      const { userId } = req.body as ResendOTPDto;
+      const result = await this.authService.resendVerificationCode(userId);
+      res.json(result);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+
   async login(req: Request, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
@@ -51,6 +94,7 @@ export class AuthController {
     }
   }
 
+
   async me(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
@@ -65,6 +109,7 @@ export class AuthController {
     }
   }
 
+
   async recuperarSenha(req: Request, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
@@ -73,21 +118,19 @@ export class AuthController {
         return;
       }
 
-      const { email } = req.body as PasswordResetRequestDto;
-      const resetToken = await this.authService.requestPasswordReset(email);
+      const { email } = req.body as RequestPasswordResetDto;
+      const result = await this.authService.requestPasswordReset(email);
 
-      // Em produção, não retornar o token diretamente
       res.json({
         success: true,
-        message: 'Token de recuperação gerado',
-        resetToken // Apenas para desenvolvimento
+        message: result.message
       });
     } catch (error) {
       this.handleError(error, res);
     }
   }
 
-  async redefinirSenha(req: Request, res: Response): Promise<void> {
+  async verificarCodigoRecuperacao(req: Request, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -95,27 +138,81 @@ export class AuthController {
         return;
       }
 
-      const { token, nova_senha } = req.body as PasswordResetDto;
-      await this.authService.resetPassword(token, nova_senha);
+      const { email, codigo } = req.body;
+      const result = await this.authService.verifyPasswordResetOTP({ email, codigo });
+
+      res.json(result);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async redefinirSenhaComOTP(req: Request, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      const { email, codigo, nova_senha } = req.body;
+      const result = await this.authService.resetPasswordWithOTP({ email, codigo, nova_senha });
 
       res.json({
         success: true,
-        message: 'Senha redefinida com sucesso'
+        message: result.message
       });
     } catch (error) {
       this.handleError(error, res);
     }
   }
 
+  async logout(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      // Aqui você pode implementar blacklist de tokens no Redis
+      // Por enquanto, apenas retorna sucesso
+      res.json({
+        success: true,
+        message: 'Logout realizado com sucesso'
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+
   private handleError(error: any, res: Response): void {
     logger.error('Erro na requisição:', error);
 
     if (error instanceof ValidationError) {
-      res.status(400).json({ error: error.message });
+      res.status(400).json({
+        success: false,
+        error: error.message
+      });
     } else if (error instanceof AuthenticationError) {
-      res.status(401).json({ error: error.message });
+      res.status(401).json({
+        success: false,
+        error: error.message
+      });
+    } else if (error.code === 'P2002') {
+      res.status(400).json({
+        success: false,
+        error: 'Este email já está cadastrado'
+      });
+    } else if (error.code === 'P2025') {
+      res.status(404).json({
+        success: false,
+        error: 'Registro não encontrado'
+      });
     } else {
-      res.status(500).json({ error: 'Erro interno do servidor' });
+      const message = process.env.NODE_ENV === 'development'
+        ? error.message
+        : 'Erro interno do servidor';
+
+      res.status(500).json({
+        success: false,
+        error: message
+      });
     }
   }
 }

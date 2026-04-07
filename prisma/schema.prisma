@@ -81,117 +81,139 @@ enum ModeloStatus {
 }
 
 model Usuario {
-  id_usuario         Int            @id @default(autoincrement())
-  nome               String         @db.VarChar(100)
-  email              String         @unique @db.VarChar(100)
-  senha_hash         String         @db.VarChar(255)
-  telefone           String?        @db.VarChar(20)
-  tipo               UsuarioTipo
-  foto_perfil        String?        @db.VarChar(255)
-  data_cadastro      DateTime       @default(now()) @map("data_cadastro")
-  status             UsuarioStatus  @default(ativo)
-  ultimo_acesso      DateTime?
-  reset_token        String?        @db.VarChar(255)
+  id_usuario String @id @default(uuid()) @db.Char(36)
+
+  nome       String @db.VarChar(100)
+  email      String @unique @db.VarChar(100)
+  senha_hash String @db.VarChar(255)
+  telefone   String? @db.VarChar(20)
+  tipo       UsuarioTipo
+
+  foto_perfil String? @db.VarChar(255)
+  data_cadastro DateTime @default(now())
+  status UsuarioStatus @default(ativo)
+
+  ultimo_acesso DateTime?
+  reset_token String? @db.VarChar(255)
   reset_token_expira DateTime?
 
-  // Relacionamentos
-  fazedor         Fazedor?
-  requisicoes     Requisicao[]    @relation("SolicitanteRequisicoes")
-  favoritos       Favorito[]
-  avaliacoesFeitas Avaliacao[]     @relation("AvaliacoesFeitas")
-  notificacoes    Notificacao[]
+  email_verificado Boolean @default(false)
+  email_verification_code String? @db.VarChar(10)
+  email_verification_expira DateTime?
+  verification_attempts Int @default(0)
+
+  reset_password_code     String?   @db.VarChar(10)
+  reset_password_expira   DateTime?
+  reset_password_attempts Int       @default(0)
+
+  fazedor             Fazedor?
+  requisicoes         Requisicao[] @relation("SolicitanteRequisicoes")
+  favoritos           Favorito[]
+  avaliacoesFeitas    Avaliacao[] @relation("AvaliacoesFeitas")
+  notificacoes        Notificacao[]
   eventosParticipados EventoParticipante[]
 
   @@map("USUARIO")
 }
 
 model Fazedor {
-  id_fazedor        Int                     @id @default(autoincrement())
-  id_usuario        Int                     @unique
-  tipo_fazedor      FazedorTipo
-  biografia         String?                 @db.Text
-  endereco          String?                 @db.VarChar(255)
-  website           String?                 @db.VarChar(100)
-  instagram         String?                 @db.VarChar(100)
-  facebook          String?                 @db.VarChar(100)
-  status_aprovacao  FazedorStatusAprovacao  @default(pendente)
-  data_aprovacao    DateTime?
-  avaliacao_media   Decimal?                @db.Decimal(3,2)
-  total_avaliacoes  Int?                    @default(0)
+  id_fazedor String @id @default(uuid()) @db.Char(36)
+  id_usuario String @unique @db.Char(36)
 
-  // Relacionamentos
-  usuario         Usuario            @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
-  agencia         Agencia?
+  tipo_fazedor     FazedorTipo
+  biografia        String? @db.Text
+  endereco         String? @db.VarChar(255)
+  website          String? @db.VarChar(100)
+  instagram        String? @db.VarChar(100)
+  facebook         String? @db.VarChar(100)
+  status_aprovacao FazedorStatusAprovacao @default(pendente)
+  data_aprovacao   DateTime?
+  avaliacao_media  Decimal? @db.Decimal(3,2)
+  total_avaliacoes Int? @default(0)
+
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  agencia          Agencia?
   modeloFreelancer ModeloFreelancer?
-  estilista       Estilista?
-  maquiador       Maquiador?
-  fotografo       Fotografo?
-  servicos        Servico[]
-  eventos         Evento[]           @relation("EventoOrganizador")
-  favoritadoPor   Favorito[]
-  avaliacoesRecebidas Avaliacao[]    @relation("AvaliacoesRecebidas")
+  estilista        Estilista?
+  maquiador        Maquiador?
+  fotografo        Fotografo?
+
+  servicos            Servico[]
+  eventos             Evento[] @relation("EventoOrganizador")
+  favoritadoPor       Favorito[]
+  avaliacoesRecebidas Avaliacao[] @relation("AvaliacoesRecebidas")
 
   @@map("FAZEDOR")
 }
 
 model Agencia {
-  id_agencia       Int            @id @default(autoincrement())
-  id_fazedor       Int            @unique
-  nome_agencia     String         @db.VarChar(100)
-  logo_url         String?        @db.VarChar(255)
-  telefone_contato String?        @db.VarChar(20)
-  email_contato    String?        @db.VarChar(100)
-  endereco         String?        @db.VarChar(255)
-  descricao        String?        @db.Text
-  data_fundacao    DateTime?
+  id_agencia String @id @default(uuid()) @db.Char(36)
+  id_fazedor String @unique @db.Char(36)
 
-  // Relacionamentos
-  fazedor Fazedor    @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
+  nome_agencia String @db.VarChar(100)
+  logo_url     String? @db.VarChar(255)
+  telefone_contato String? @db.VarChar(20)
+  email_contato String? @db.VarChar(100)
+  endereco String? @db.VarChar(255)
+  descricao String? @db.Text
+  data_fundacao DateTime?
+
+  fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
   modelos Modelo[]
 
   @@map("AGENCIA")
 }
 
 model Modelo {
-  id_modelo      Int          @id @default(autoincrement())
-  id_agencia     Int
-  nome_completo  String       @db.VarChar(100)
-  nome_artistico String?      @db.VarChar(100)
-  genero         Genero       @default(feminino)
-  altura         Decimal?     @db.Decimal(3,2)
-  peso           Decimal?     @db.Decimal(5,2)
-  busto          Int?
-  cintura        Int?
-  quadril        Int?
-  sapato         Int?
-  roupa          Int?
-  cabelo         String?      @db.VarChar(50)
-  olhos          String?      @db.VarChar(50)
-  foto_url       String?      @db.VarChar(255)
-  book_url       String?      @db.VarChar(255)
-  status         ModeloStatus @default(ativo)
-  experiencia    String?      @db.Text
-  data_cadastro  DateTime     @default(now())
+  id_modelo String @id @default(uuid()) @db.Char(36)
+  id_agencia String @db.Char(36)
 
-  // Relacionamentos
-  agencia      Agencia        @relation(fields: [id_agencia], references: [id_agencia], onDelete: Cascade)
-  requisicoes  Requisicao[]
+  nome_completo  String @db.VarChar(100)
+  nome_artistico String? @db.VarChar(100)
+  genero Genero @default(feminino)
+
+  altura Decimal? @db.Decimal(3,2)
+  peso   Decimal? @db.Decimal(5,2)
+
+  busto Int?
+  cintura Int?
+  quadril Int?
+
+  sapato Int?
+  roupa Int?
+
+  cabelo String? @db.VarChar(50)
+  olhos  String? @db.VarChar(50)
+
+  foto_url String? @db.VarChar(255)
+  book_url String? @db.VarChar(255)
+
+  status ModeloStatus @default(ativo)
+  experiencia String? @db.Text
+  data_cadastro DateTime @default(now())
+
+  agencia Agencia @relation(fields: [id_agencia], references: [id_agencia], onDelete: Cascade)
+  requisicoes Requisicao[]
 
   @@map("MODELO")
 }
 
 model ModeloFreelancer {
-  id_modelo_freelancer Int          @id @default(autoincrement())
-  id_fazedor           Int          @unique
-  nome_artistico       String       @db.VarChar(100)
-  altura               Decimal?     @db.Decimal(3,2)
-  busto                Int?
-  cintura              Int?
-  quadril              Int?
-  foto_url             String?      @db.VarChar(255)
-  portifolio_url       String?      @db.VarChar(255)
-  status               String       @default("disponivel")
-  cache_medio          Decimal?     @db.Decimal(10,2)
+  id_modelo_freelancer String @id @default(uuid()) @db.Char(36)
+  id_fazedor String @unique @db.Char(36)
+
+  nome_artistico String @db.VarChar(100)
+  altura Decimal? @db.Decimal(3,2)
+  busto Int?
+  cintura Int?
+  quadril Int?
+
+  foto_url String? @db.VarChar(255)
+  portifolio_url String? @db.VarChar(255)
+
+  status String @default("disponivel")
+  cache_medio Decimal? @db.Decimal(10,2)
 
   fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
 
@@ -199,13 +221,14 @@ model ModeloFreelancer {
 }
 
 model Estilista {
-  id_estilista Int     @id @default(autoincrement())
-  id_fazedor   Int     @unique
-  nome_marca   String? @db.VarChar(100)
+  id_estilista String @id @default(uuid()) @db.Char(36)
+  id_fazedor String @unique @db.Char(36)
+
+  nome_marca String? @db.VarChar(100)
   especialidade String? @db.VarChar(100)
-  logo_url     String? @db.VarChar(255)
+  logo_url String? @db.VarChar(255)
   portifolio_url String? @db.VarChar(255)
-  instagram    String? @db.VarChar(100)
+  instagram String? @db.VarChar(100)
 
   fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
 
@@ -213,11 +236,12 @@ model Estilista {
 }
 
 model Maquiador {
-  id_maquiador   Int     @id @default(autoincrement())
-  id_fazedor     Int     @unique
-  especialidade  String? @db.VarChar(100)
+  id_maquiador String @id @default(uuid()) @db.Char(36)
+  id_fazedor String @unique @db.Char(36)
+
+  especialidade String? @db.VarChar(100)
   portifolio_url String? @db.VarChar(255)
-  certificacoes  String? @db.Text
+  certificacoes String? @db.Text
   marcas_preferidas String? @db.Text
 
   fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
@@ -226,12 +250,13 @@ model Maquiador {
 }
 
 model Fotografo {
-  id_fotografo    Int     @id @default(autoincrement())
-  id_fazedor      Int     @unique
-  especialidade   String? @db.VarChar(100)
+  id_fotografo String @id @default(uuid()) @db.Char(36)
+  id_fazedor String @unique @db.Char(36)
+
+  especialidade String? @db.VarChar(100)
   camera_equipamento String? @db.VarChar(255)
-  portifolio_url  String? @db.VarChar(255)
-  estilos         String? @db.Text
+  portifolio_url String? @db.VarChar(255)
+  estilos String? @db.Text
 
   fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
 
@@ -239,77 +264,84 @@ model Fotografo {
 }
 
 model Servico {
-  id_servico     Int           @id @default(autoincrement())
-  id_fazedor     Int
-  titulo         String        @db.VarChar(100)
-  descricao      String?       @db.Text
-  categoria      String?       @db.VarChar(50)
-  valor          Decimal?      @db.Decimal(10,2)
-  imagem_url     String?       @db.VarChar(255)
-  status         ServicoStatus @default(ativo)
-  data_criacao   DateTime      @default(now())
-  tempo_estimado String?       @db.VarChar(50)
+  id_servico String @id @default(uuid()) @db.Char(36)
+  id_fazedor String @db.Char(36)
 
-  // Relacionamentos
-  fazedor     Fazedor      @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
+  titulo String @db.VarChar(100)
+  descricao String? @db.Text
+  categoria String? @db.VarChar(50)
+  valor Decimal? @db.Decimal(10,2)
+  imagem_url String? @db.VarChar(255)
+  status ServicoStatus @default(ativo)
+  data_criacao DateTime @default(now())
+  tempo_estimado String? @db.VarChar(50)
+
+  fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
   requisicoes Requisicao[]
 
   @@map("SERVICO")
 }
 
 model Evento {
-  id_evento        Int          @id @default(autoincrement())
-  id_organizador   Int
-  titulo           String       @db.VarChar(150)
-  descricao        String?      @db.Text
-  local            String?      @db.VarChar(255)
-  latitude         Decimal?     @db.Decimal(10,8)
-  longitude        Decimal?     @db.Decimal(11,8)
-  data_inicio      DateTime
-  data_fim         DateTime
-  tipo_evento      EventoTipo
-  imagem_url       String?      @db.VarChar(255)
-  status           EventoStatus @default(ativo)
-  vagas_disponiveis Int         @default(0)
-  data_criacao     DateTime     @default(now())
-  valor_ingresso   Decimal?     @default(0) @db.Decimal(10,2)
+  id_evento String @id @default(uuid()) @db.Char(36)
+  id_organizador String @db.Char(36)
 
-  // Relacionamentos
-  organizador    Fazedor                @relation("EventoOrganizador", fields: [id_organizador], references: [id_fazedor], onDelete: Cascade)
-  participantes  EventoParticipante[]
+  titulo String @db.VarChar(150)
+  descricao String? @db.Text
+  local String? @db.VarChar(255)
+
+  latitude  Decimal? @db.Decimal(10,8)
+  longitude Decimal? @db.Decimal(11,8)
+
+  data_inicio DateTime
+  data_fim DateTime
+
+  tipo_evento EventoTipo
+  imagem_url String? @db.VarChar(255)
+  status EventoStatus @default(ativo)
+
+  vagas_disponiveis Int @default(0)
+  data_criacao DateTime @default(now())
+  valor_ingresso Decimal? @db.Decimal(10,2) @default(0)
+
+  organizador Fazedor @relation("EventoOrganizador", fields: [id_organizador], references: [id_fazedor], onDelete: Cascade)
+  participantes EventoParticipante[]
 
   @@map("EVENTO")
 }
 
 model Requisicao {
-  id_requisicao    Int             @id @default(autoincrement())
-  id_solicitante   Int
-  id_servico       Int?
-  id_modelo        Int?
-  data_requisicao  DateTime        @default(now())
-  status           RequisicaoStatus @default(pendente)
-  mensagem         String?         @db.Text
-  contato_retorno  String?         @db.VarChar(100)
-  data_resposta    DateTime?
-  observacoes      String?         @db.Text
+  id_requisicao String @id @default(uuid()) @db.Char(36)
 
-  // Relacionamentos
+  id_solicitante String @db.Char(36)
+  id_servico String?
+  id_modelo String?
+
+  data_requisicao DateTime @default(now())
+  status RequisicaoStatus @default(pendente)
+
+  mensagem String? @db.Text
+  contato_retorno String? @db.VarChar(100)
+  data_resposta DateTime?
+  observacoes String? @db.Text
+
   solicitante Usuario @relation("SolicitanteRequisicoes", fields: [id_solicitante], references: [id_usuario], onDelete: Cascade)
-  servico     Servico? @relation(fields: [id_servico], references: [id_servico], onDelete: SetNull)
-  modelo      Modelo?  @relation(fields: [id_modelo], references: [id_modelo], onDelete: SetNull)
+  servico Servico? @relation(fields: [id_servico], references: [id_servico], onDelete: SetNull)
+  modelo Modelo? @relation(fields: [id_modelo], references: [id_modelo], onDelete: SetNull)
 
   @@map("REQUISICAO")
 }
 
 model Notificacao {
-  id_notificacao Int              @id @default(autoincrement())
-  id_usuario     Int
-  titulo         String           @db.VarChar(100)
-  mensagem       String           @db.Text
-  tipo           NotificacaoTipo
-  lida           Boolean          @default(false)
-  data_envio     DateTime         @default(now())
-  link           String?          @db.VarChar(255)
+  id_notificacao String @id @default(uuid()) @db.Char(36)
+  id_usuario String @db.Char(36)
+
+  titulo String @db.VarChar(100)
+  mensagem String @db.Text
+  tipo NotificacaoTipo
+  lida Boolean @default(false)
+  data_envio DateTime @default(now())
+  link String? @db.VarChar(255)
 
   usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
@@ -317,10 +349,12 @@ model Notificacao {
 }
 
 model Favorito {
-  id_favorito  Int      @id @default(autoincrement())
-  id_usuario   Int
-  id_fazedor   Int
-  data_adicao  DateTime @default(now())
+  id_favorito String @id @default(uuid()) @db.Char(36)
+
+  id_usuario String @db.Char(36)
+  id_fazedor String @db.Char(36)
+
+  data_adicao DateTime @default(now())
 
   usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
   fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
@@ -330,29 +364,33 @@ model Favorito {
 }
 
 model Avaliacao {
-  id_avaliacao   Int      @id @default(autoincrement())
-  id_avaliador   Int
-  id_avaliado    Int
-  nota           Int
-  comentario     String?  @db.Text
+  id_avaliacao String @id @default(uuid()) @db.Char(36)
+
+  id_avaliador String @db.Char(36)
+  id_avaliado String @db.Char(36)
+
+  nota Int
+  comentario String? @db.Text
   data_avaliacao DateTime @default(now())
 
   avaliador Usuario @relation("AvaliacoesFeitas", fields: [id_avaliador], references: [id_usuario], onDelete: Cascade)
-  avaliado  Fazedor @relation("AvaliacoesRecebidas", fields: [id_avaliado], references: [id_fazedor], onDelete: Cascade)
+  avaliado Fazedor @relation("AvaliacoesRecebidas", fields: [id_avaliado], references: [id_fazedor], onDelete: Cascade)
 
   @@unique([id_avaliador, id_avaliado])
   @@map("AVALIACAO")
 }
 
 model EventoParticipante {
-  id_evento_participante Int      @id @default(autoincrement())
-  id_evento              Int
-  id_usuario             Int
-  papel                  String   @default("participante")
-  data_confirmacao       DateTime @default(now())
-  presente               Boolean  @default(false)
+  id_evento_participante String @id @default(uuid()) @db.Char(36)
 
-  evento Evento  @relation(fields: [id_evento], references: [id_evento], onDelete: Cascade)
+  id_evento String @db.Char(36)
+  id_usuario String @db.Char(36)
+
+  papel String @default("participante")
+  data_confirmacao DateTime @default(now())
+  presente Boolean @default(false)
+
+  evento Evento @relation(fields: [id_evento], references: [id_evento], onDelete: Cascade)
   usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
   @@unique([id_evento, id_usuario])

@@ -1,6 +1,6 @@
 -- CreateTable
 CREATE TABLE `USUARIO` (
-    `id_usuario` INTEGER NOT NULL AUTO_INCREMENT,
+    `id_usuario` CHAR(36) NOT NULL,
     `nome` VARCHAR(100) NOT NULL,
     `email` VARCHAR(100) NOT NULL,
     `senha_hash` VARCHAR(255) NOT NULL,
@@ -12,6 +12,10 @@ CREATE TABLE `USUARIO` (
     `ultimo_acesso` DATETIME(3) NULL,
     `reset_token` VARCHAR(255) NULL,
     `reset_token_expira` DATETIME(3) NULL,
+    `email_verificado` BOOLEAN NOT NULL DEFAULT false,
+    `email_verification_code` VARCHAR(10) NULL,
+    `email_verification_expira` DATETIME(3) NULL,
+    `verification_attempts` INTEGER NOT NULL DEFAULT 0,
 
     UNIQUE INDEX `USUARIO_email_key`(`email`),
     PRIMARY KEY (`id_usuario`)
@@ -19,8 +23,8 @@ CREATE TABLE `USUARIO` (
 
 -- CreateTable
 CREATE TABLE `FAZEDOR` (
-    `id_fazedor` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_usuario` INTEGER NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
+    `id_usuario` CHAR(36) NOT NULL,
     `tipo_fazedor` ENUM('agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer') NOT NULL,
     `biografia` TEXT NULL,
     `endereco` VARCHAR(255) NULL,
@@ -38,8 +42,8 @@ CREATE TABLE `FAZEDOR` (
 
 -- CreateTable
 CREATE TABLE `AGENCIA` (
-    `id_agencia` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_fazedor` INTEGER NOT NULL,
+    `id_agencia` CHAR(36) NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
     `nome_agencia` VARCHAR(100) NOT NULL,
     `logo_url` VARCHAR(255) NULL,
     `telefone_contato` VARCHAR(20) NULL,
@@ -54,8 +58,8 @@ CREATE TABLE `AGENCIA` (
 
 -- CreateTable
 CREATE TABLE `MODELO` (
-    `id_modelo` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_agencia` INTEGER NOT NULL,
+    `id_modelo` CHAR(36) NOT NULL,
+    `id_agencia` CHAR(36) NOT NULL,
     `nome_completo` VARCHAR(100) NOT NULL,
     `nome_artistico` VARCHAR(100) NULL,
     `genero` ENUM('feminino', 'masculino', 'outro') NOT NULL DEFAULT 'feminino',
@@ -79,8 +83,8 @@ CREATE TABLE `MODELO` (
 
 -- CreateTable
 CREATE TABLE `MODELO_FREELANCER` (
-    `id_modelo_freelancer` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_fazedor` INTEGER NOT NULL,
+    `id_modelo_freelancer` CHAR(36) NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
     `nome_artistico` VARCHAR(100) NOT NULL,
     `altura` DECIMAL(3, 2) NULL,
     `busto` INTEGER NULL,
@@ -97,8 +101,8 @@ CREATE TABLE `MODELO_FREELANCER` (
 
 -- CreateTable
 CREATE TABLE `ESTILISTA` (
-    `id_estilista` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_fazedor` INTEGER NOT NULL,
+    `id_estilista` CHAR(36) NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
     `nome_marca` VARCHAR(100) NULL,
     `especialidade` VARCHAR(100) NULL,
     `logo_url` VARCHAR(255) NULL,
@@ -111,8 +115,8 @@ CREATE TABLE `ESTILISTA` (
 
 -- CreateTable
 CREATE TABLE `MAQUIADOR` (
-    `id_maquiador` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_fazedor` INTEGER NOT NULL,
+    `id_maquiador` CHAR(36) NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
     `especialidade` VARCHAR(100) NULL,
     `portifolio_url` VARCHAR(255) NULL,
     `certificacoes` TEXT NULL,
@@ -124,8 +128,8 @@ CREATE TABLE `MAQUIADOR` (
 
 -- CreateTable
 CREATE TABLE `FOTOGRAFO` (
-    `id_fotografo` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_fazedor` INTEGER NOT NULL,
+    `id_fotografo` CHAR(36) NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
     `especialidade` VARCHAR(100) NULL,
     `camera_equipamento` VARCHAR(255) NULL,
     `portifolio_url` VARCHAR(255) NULL,
@@ -137,8 +141,8 @@ CREATE TABLE `FOTOGRAFO` (
 
 -- CreateTable
 CREATE TABLE `SERVICO` (
-    `id_servico` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_fazedor` INTEGER NOT NULL,
+    `id_servico` CHAR(36) NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
     `titulo` VARCHAR(100) NOT NULL,
     `descricao` TEXT NULL,
     `categoria` VARCHAR(50) NULL,
@@ -153,8 +157,8 @@ CREATE TABLE `SERVICO` (
 
 -- CreateTable
 CREATE TABLE `EVENTO` (
-    `id_evento` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_organizador` INTEGER NOT NULL,
+    `id_evento` CHAR(36) NOT NULL,
+    `id_organizador` CHAR(36) NOT NULL,
     `titulo` VARCHAR(150) NOT NULL,
     `descricao` TEXT NULL,
     `local` VARCHAR(255) NULL,
@@ -174,10 +178,10 @@ CREATE TABLE `EVENTO` (
 
 -- CreateTable
 CREATE TABLE `REQUISICAO` (
-    `id_requisicao` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_solicitante` INTEGER NOT NULL,
-    `id_servico` INTEGER NULL,
-    `id_modelo` INTEGER NULL,
+    `id_requisicao` CHAR(36) NOT NULL,
+    `id_solicitante` CHAR(36) NOT NULL,
+    `id_servico` VARCHAR(191) NULL,
+    `id_modelo` VARCHAR(191) NULL,
     `data_requisicao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `status` ENUM('pendente', 'aceita', 'recusada', 'concluida', 'cancelada') NOT NULL DEFAULT 'pendente',
     `mensagem` TEXT NULL,
@@ -190,8 +194,8 @@ CREATE TABLE `REQUISICAO` (
 
 -- CreateTable
 CREATE TABLE `NOTIFICACAO` (
-    `id_notificacao` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_usuario` INTEGER NOT NULL,
+    `id_notificacao` CHAR(36) NOT NULL,
+    `id_usuario` CHAR(36) NOT NULL,
     `titulo` VARCHAR(100) NOT NULL,
     `mensagem` TEXT NOT NULL,
     `tipo` ENUM('requisicao', 'evento', 'sistema', 'mensagem') NOT NULL,
@@ -204,9 +208,9 @@ CREATE TABLE `NOTIFICACAO` (
 
 -- CreateTable
 CREATE TABLE `FAVORITO` (
-    `id_favorito` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_usuario` INTEGER NOT NULL,
-    `id_fazedor` INTEGER NOT NULL,
+    `id_favorito` CHAR(36) NOT NULL,
+    `id_usuario` CHAR(36) NOT NULL,
+    `id_fazedor` CHAR(36) NOT NULL,
     `data_adicao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     UNIQUE INDEX `FAVORITO_id_usuario_id_fazedor_key`(`id_usuario`, `id_fazedor`),
@@ -215,9 +219,9 @@ CREATE TABLE `FAVORITO` (
 
 -- CreateTable
 CREATE TABLE `AVALIACAO` (
-    `id_avaliacao` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_avaliador` INTEGER NOT NULL,
-    `id_avaliado` INTEGER NOT NULL,
+    `id_avaliacao` CHAR(36) NOT NULL,
+    `id_avaliador` CHAR(36) NOT NULL,
+    `id_avaliado` CHAR(36) NOT NULL,
     `nota` INTEGER NOT NULL,
     `comentario` TEXT NULL,
     `data_avaliacao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -228,9 +232,9 @@ CREATE TABLE `AVALIACAO` (
 
 -- CreateTable
 CREATE TABLE `EVENTO_PARTICIPANTE` (
-    `id_evento_participante` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_evento` INTEGER NOT NULL,
-    `id_usuario` INTEGER NOT NULL,
+    `id_evento_participante` CHAR(36) NOT NULL,
+    `id_evento` CHAR(36) NOT NULL,
+    `id_usuario` CHAR(36) NOT NULL,
     `papel` VARCHAR(191) NOT NULL DEFAULT 'participante',
     `data_confirmacao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `presente` BOOLEAN NOT NULL DEFAULT false,

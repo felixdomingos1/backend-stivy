@@ -3,7 +3,7 @@ import { verificarToken } from '../utils/jwt';
 import prisma from '../config/database';
 
 export interface AuthRequest extends Request {
-  usuarioId?: number;
+  usuarioId?: string;
   usuario?: any;
 }
 

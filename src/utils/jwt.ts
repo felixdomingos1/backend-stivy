@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { JwtPayload } from '../types';
 
-export const gerarToken = (payload: JwtPayload): string => {
+export const gerarToken = (payload: JwtPayload, time?:string): string => {
   return jwt.sign(payload, process.env.JWT_SECRET!);
 };
 

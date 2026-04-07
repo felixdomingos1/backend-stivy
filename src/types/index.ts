@@ -1,7 +1,8 @@
 export interface JwtPayload {
-  id: number;
+  id: string;
   email: string;
   tipo: string;
+  isVerified:boolean
 }
 
 export interface ApiResponse<T = any> {

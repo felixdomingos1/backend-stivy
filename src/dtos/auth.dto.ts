@@ -13,20 +13,51 @@ export interface LoginDto {
   senha: string;
 }
 
+export interface VerifyEmailDto {
+  userId: string;
+  codigo: string;
+}
+
+export interface ResendOTPDto {
+  userId: string;
+}
+
+export interface RequestPasswordResetDto {
+  email: string;
+}
+
+export interface VerifyPasswordResetOtpDto {
+  email: string;
+  codigo: string;
+}
+
+export interface ResetPasswordWithOtpDto {
+  email: string;
+  codigo: string;
+  nova_senha: string;
+}
+
 export interface AuthResponseDto {
   success: boolean;
   message: string;
-  token: string;
+  token?: string;
+  requiresVerification?: boolean;
+  resetToken?: string; // Deprecated, manter para compatibilidade
   usuario: {
-    id: number;
+    id: string;
     nome: string;
     email: string;
     telefone?: string;
     tipo: string;
     foto_perfil?: string;
+    email_verificado?: boolean;
     status_aprovacao?: string;
     tipo_fazedor?: string;
   };
+}
+export interface LoginDto {
+  email: string;
+  senha: string;
 }
 
 export interface PasswordResetRequestDto {

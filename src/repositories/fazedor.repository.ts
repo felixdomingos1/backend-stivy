@@ -9,7 +9,7 @@ export class FazedorRepository {
   }
 
   async createFazedor(data: {
-    id_usuario: number;
+    id_usuario: string;
     tipo_fazedor: string;
     status_aprovacao?: string;
   }) {
@@ -22,7 +22,7 @@ export class FazedorRepository {
     });
   }
 
-  async findFazedorByUserId(userId: number) {
+  async findFazedorByUserId(userId: string) {
     return await this.prisma.fazedor.findUnique({
       where: { id_usuario: userId },
       include: {
@@ -35,7 +35,7 @@ export class FazedorRepository {
     });
   }
 
-  async findFazedorWithDetails(userId: number) {
+  async findFazedorWithDetails(userId: string) {
     return await this.prisma.fazedor.findUnique({
       where: { id_usuario: userId },
       include: {

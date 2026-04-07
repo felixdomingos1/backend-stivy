@@ -16,7 +16,7 @@ export const createServicoValidation = [
 
   body('categoria')
     .optional()
-    .isString()
+    .isUUID()
     .trim(),
 
   body('valor')
@@ -27,14 +27,14 @@ export const createServicoValidation = [
 
   body('tempo_estimado')
     .optional()
-    .isString()
+    .isUUID()
     .trim()
 ];
 
 export const listarServicosValidation = [
   query('categoria')
     .optional()
-    .isString()
+    .isUUID()
     .trim(),
 
   query('min_valor')

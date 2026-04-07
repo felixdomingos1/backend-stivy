@@ -1,85 +1,21 @@
-import express, { Application } from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import compression from 'compression';
-import path from 'path';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 console.log('🚀 Iniciando servidor STIVY...');
 console.log(`📦 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-
 import { connectRedis, isRedisReady, getRedisClient } from './config/redis';
-import { errorHandler, notFoundHandler } from './middleware/error.middleware';
-import routes from './routes';
+import app from './app';
+import { EmailService } from './services/email.service';
+import logger from './utils/logger';
 
-const app: Application = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(helmet());
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  credentials: true
-}));
-app.use(compression());
-app.use(morgan('combined', { stream: { write: (msg) => console.log(msg.trim()) } }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-app.get('/health', (_, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV,
-    redis: isRedisReady() ? 'connected' : 'disconnected'
-  });
-});
-
-app.get('/redis-status', async (_, res) => {
-  try {
-    const ready = isRedisReady();
-    let pingResult = 'unknown';
-
-    if (ready) {
-      try {
-        const client = getRedisClient();
-        const ping = await client.ping();
-        pingResult = ping === 'PONG' ? 'OK' : 'FAIL';
-      } catch (pingError: any) {
-        pingResult = `ERROR: ${pingError.message}`;
-      }
-    }
-
-    res.json({
-      connected: ready,
-      ready: ready,
-      ping: pingResult,
-      config: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379')
-      },
-      timestamp: new Date().toISOString()
-    });
-  } catch (error: any) {
-    console.error('Erro na rota /redis-status:', error);
-    res.status(500).json({
-      connected: false,
-      error: error.message
-    });
-  }
-});
-
-app.use('/api', routes);
-app.use(notFoundHandler);
-
-app.use(errorHandler);
 async function startServer(): Promise<void> {
   console.log('🔄 Conectando ao Redis...');
   const redisConnected = await connectRedis();
+  const emailService = EmailService.getInstance();
+
   if (redisConnected) {
     console.log('✅ Redis conectado e funcionando!');
     const client = getRedisClient();
@@ -88,6 +24,47 @@ async function startServer(): Promise<void> {
   } else {
     console.warn('⚠️ Redis NÃO conectado. O servidor continuará sem cache.');
   }
+
+  await emailService.initialize().catch(error => {
+    logger.warn('⚠️ Email service não está disponível:', error.message);
+  });
+
+  if (process.env.NODE_ENV !== 'test') {
+    app.get('/redis-status', async (_, res) => {
+      try {
+        const ready = isRedisReady();
+        let pingResult = 'unknown';
+
+        if (ready) {
+          try {
+            const client = getRedisClient();
+            const ping = await client.ping();
+            pingResult = ping === 'PONG' ? 'OK' : 'FAIL';
+          } catch (pingError: any) {
+            pingResult = `ERROR: ${pingError.message}`;
+          }
+        }
+
+        res.json({
+          connected: ready,
+          ready: ready,
+          ping: pingResult,
+          config: {
+            host: process.env.REDIS_HOST || 'localhost',
+            port: parseInt(process.env.REDIS_PORT || '6379')
+          },
+          timestamp: new Date().toISOString()
+        });
+      } catch (error: any) {
+        console.error('Erro na rota /redis-status:', error);
+        res.status(500).json({
+          connected: false,
+          error: error.message
+        });
+      }
+    });
+  }
+
   console.log(`🚀 Iniciando servidor na porta ${PORT}...`);
   app.listen(PORT, () => {
     console.log(`
@@ -96,14 +73,15 @@ async function startServer(): Promise<void> {
     Ambiente: ${process.env.NODE_ENV || 'development'}
     Redis: ${redisConnected ? '✅ CONECTADO' : '❌ DESCONECTADO'}
     Health: http://localhost:${PORT}/health
-    Redis Status: http://localhost:${PORT}/redis-status
     `);
   });
 }
 
-startServer().catch((error) => {
-  console.error('❌ Erro fatal ao iniciar servidor:', error);
-  process.exit(1);
-});
+if (process.env.NODE_ENV !== 'test') {
+  startServer().catch((error) => {
+    console.error('❌ Erro fatal ao iniciar servidor:', error);
+    process.exit(1);
+  });
+}
 
 export default app;

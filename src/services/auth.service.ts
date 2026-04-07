@@ -1,19 +1,26 @@
-// services/auth.service.ts
+// services/auth.service.ts (atualizado)
 import { IAuthService } from '../interfaces/IAuthService';
-import { RegisterUserDto, LoginDto, AuthResponseDto } from '../dtos/auth.dto';
+import { RegisterUserDto, LoginDto, AuthResponseDto, VerifyEmailDto, RequestPasswordResetDto, VerifyPasswordResetOtpDto, ResetPasswordWithOtpDto } from '../dtos/auth.dto';
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { hashSenha, compararSenha } from '../utils/bcrypt';
 import { gerarToken } from '../utils/jwt';
 import logger from '../utils/logger';
-import crypto from 'crypto';
 import { ValidationError, AuthenticationError } from '../utils/errors';
+import { EmailService } from './email.service';
+import { OTPService } from './otp.service';
 
 export class AuthService implements IAuthService {
+  private emailService: EmailService;
+  private otpService: OTPService;
+
   constructor(
     private userRepository: UserRepository,
     private fazedorRepository: FazedorRepository
-  ) { }
+  ) {
+    this.emailService = EmailService.getInstance();
+    this.otpService = OTPService.getInstance();
+  }
 
   async register(dto: RegisterUserDto): Promise<AuthResponseDto> {
     const existingUser = await this.userRepository.findByEmail(dto.email);
@@ -22,6 +29,8 @@ export class AuthService implements IAuthService {
     }
 
     const hashedPassword = await hashSenha(dto.senha);
+    const otpCode = this.otpService.generateOTP();
+    const otpExpiration = this.otpService.getExpirationDate();
 
     const user = await this.userRepository.create({
       nome: dto.nome,
@@ -29,7 +38,11 @@ export class AuthService implements IAuthService {
       senha_hash: hashedPassword,
       telefone: dto.telefone,
       tipo: dto.tipo,
-      status: 'ativo'
+      status: 'ativo',
+      email_verificado: false,
+      email_verification_code: otpCode,
+      email_verification_expira: otpExpiration,
+      verification_attempts: 0
     });
 
     let fazedor = null;
@@ -40,17 +53,90 @@ export class AuthService implements IAuthService {
       });
     }
 
-    const token = gerarToken({
+    try {
+      await this.emailService.sendVerificationEmail(dto.email, dto.nome, otpCode);
+      logger.info(`Email de verificação enviado para: ${dto.email}`);
+    } catch (error) {
+      logger.error('Falha ao enviar email de verificação:', error);
+    }
+
+    const tempToken = gerarToken({
       id: user.id_usuario,
       email: user.email,
-      tipo: user.tipo
-    });
-
-    logger.info(`Novo usuário registrado: ${user.email}`);
+      tipo: user.tipo,
+      isVerified: false
+    }, '1h');
 
     return {
       success: true,
-      message: 'Usuário cadastrado com sucesso',  // Adicionar message
+      message: 'Usuário cadastrado com sucesso! Verifique seu email para ativar sua conta.',
+      token: tempToken,
+      requiresVerification: true,
+      usuario: {
+        id: user.id_usuario,
+        nome: user.nome,
+        email: user.email,
+        telefone: user.telefone || undefined,
+        tipo: user.tipo,
+        foto_perfil: user.foto_perfil || undefined,
+        email_verificado: false,
+        status_aprovacao: fazedor?.status_aprovacao || undefined,
+        tipo_fazedor: fazedor?.tipo_fazedor || undefined
+      }
+    };
+  }
+
+  async verifyEmail(dto: VerifyEmailDto): Promise<AuthResponseDto> {
+    const user = await this.userRepository.findById(dto.userId);
+    if (!user) {
+      throw new ValidationError('Usuário não encontrado');
+    }
+
+    if (user.email_verificado) {
+      throw new ValidationError('Email já verificado');
+    }
+
+    const maxAttempts = 5;
+    const attempts = user.verification_attempts || 0;
+
+    if (attempts >= maxAttempts) {
+      throw new ValidationError('Número máximo de tentativas excedido. Solicite um novo código.');
+    }
+
+    const isValid = this.otpService.isOTPValid(
+      dto.codigo,
+      user.email_verification_code,
+      user.email_verification_expira
+    );
+
+    if (!isValid) {
+      await this.userRepository.incrementVerificationAttempts(user.id_usuario);
+      const remainingAttempts = maxAttempts - (attempts + 1);
+      throw new ValidationError(`Código inválido ou expirado. Você tem ${remainingAttempts} tentativa(s) restante(s).`);
+    }
+
+    await this.userRepository.markEmailAsVerified(user.id_usuario);
+
+    try {
+      await this.emailService.sendWelcomeEmail(user.email, user.nome);
+    } catch (error) {
+      logger.warn('Falha ao enviar email de boas-vindas:', error);
+    }
+
+    const token = gerarToken({
+      id: user.id_usuario,
+      email: user.email,
+      tipo: user.tipo,
+      isVerified: true
+    });
+
+    logger.info(`Email verificado para usuário: ${user.email}`);
+
+    const fazedor = await this.fazedorRepository.findFazedorByUserId(user.id_usuario);
+
+    return {
+      success: true,
+      message: 'Email verificado com sucesso! Sua conta está ativa.',
       token,
       usuario: {
         id: user.id_usuario,
@@ -59,14 +145,42 @@ export class AuthService implements IAuthService {
         telefone: user.telefone || undefined,
         tipo: user.tipo,
         foto_perfil: user.foto_perfil || undefined,
+        email_verificado: true,
         status_aprovacao: fazedor?.status_aprovacao || undefined,
         tipo_fazedor: fazedor?.tipo_fazedor || undefined
       }
     };
   }
 
+  async resendVerificationCode(userId: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new ValidationError('Usuário não encontrado');
+    }
+
+    if (user.email_verificado) {
+      throw new ValidationError('Email já verificado');
+    }
+
+    const newOTP = this.otpService.generateOTP();
+    const newExpiration = this.otpService.getExpirationDate();
+
+    await this.userRepository.updateVerificationCode(user.id_usuario, newOTP, newExpiration);
+
+    try {
+      await this.emailService.sendVerificationEmail(user.email, user.nome, newOTP);
+      logger.info(`Novo código de verificação enviado para: ${user.email}`);
+    } catch (error) {
+      logger.error('Falha ao reenviar email de verificação:', error);
+      throw new Error('Falha ao enviar email. Tente novamente.');
+    }
+
+    return {
+      message: 'Novo código de verificação enviado com sucesso!'
+    };
+  }
+
   async login(dto: LoginDto): Promise<AuthResponseDto> {
-    // Usar findByIdComplete para ter acesso à senha_hash
     const user = await this.userRepository.findByEmail(dto.email);
     if (!user) {
       throw new AuthenticationError('Email ou senha inválidos');
@@ -81,6 +195,10 @@ export class AuthService implements IAuthService {
       throw new AuthenticationError('Usuário bloqueado ou inativo');
     }
 
+    if (!user.email_verificado) {
+      throw new AuthenticationError('Email não verificado. Verifique sua caixa de entrada.');
+    }
+
     await this.userRepository.updateLastAccess(user.id_usuario);
 
     const fazedor = await this.fazedorRepository.findFazedorByUserId(user.id_usuario);
@@ -88,14 +206,15 @@ export class AuthService implements IAuthService {
     const token = gerarToken({
       id: user.id_usuario,
       email: user.email,
-      tipo: user.tipo
+      tipo: user.tipo,
+      isVerified: true
     });
 
     logger.info(`Usuário logado: ${user.email}`);
 
     return {
       success: true,
-      message: 'Login realizado com sucesso',  // Adicionar message
+      message: 'Login realizado com sucesso',
       token,
       usuario: {
         id: user.id_usuario,
@@ -104,13 +223,14 @@ export class AuthService implements IAuthService {
         telefone: user.telefone || undefined,
         tipo: user.tipo,
         foto_perfil: user.foto_perfil || undefined,
+        email_verificado: true,
         status_aprovacao: fazedor?.status_aprovacao || undefined,
         tipo_fazedor: fazedor?.tipo_fazedor || undefined
       }
     };
   }
 
-  async getUserProfile(userId: number): Promise<any> {
+  async getUserProfile(userId: string): Promise<any> {
     const user = await this.userRepository.findById(userId);
     if (!user) {
       throw new ValidationError('Usuário não encontrado');
@@ -121,45 +241,81 @@ export class AuthService implements IAuthService {
     return { usuario: user, fazedor };
   }
 
-  async requestPasswordReset(email: string): Promise<string> {
+  async requestPasswordReset(email: string): Promise<{ message: string}> {
     const user = await this.userRepository.findByEmail(email);
     if (!user) {
       throw new ValidationError('Email não encontrado');
     }
-
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpires = new Date(Date.now() + 3600000);
-
-    await this.userRepository.updatePasswordResetToken(
-      user.id_usuario,
-      resetToken,
-      resetTokenExpires
-    );
-
-    logger.info(`Token de recuperação gerado para: ${email}`);
-
-    return resetToken;
-  }
-
-  async resetPassword(token: string, newPassword: string): Promise<void> {
-    const user = await this.prisma?.usuario.findFirst({
-      where: {
-        reset_token: token,
-        reset_token_expira: { gt: new Date() }
-      }
-    });
-
-    if (!user) {
-      throw new ValidationError('Token inválido ou expirado');
+    const otpCode = this.otpService.generateOTP();
+    const otpExpiration = this.otpService.getExpirationDate();
+    await this.userRepository.updatePasswordResetOTP(email, otpCode, otpExpiration);
+    try {
+      await this.emailService.sendPasswordResetOTPEmail(user.email, user.nome, otpCode);
+      logger.info(`Email de recuperação com OTP enviado para: ${email}`);
+    } catch (error) {
+      logger.error('Falha ao enviar email de recuperação:', error);
+      throw new Error('Falha ao enviar email de recuperação');
     }
 
-    const hashedPassword = await hashSenha(newPassword);
-    await this.userRepository.updatePassword(user.id_usuario, hashedPassword);
-
-    logger.info(`Senha redefinida para usuário: ${user.email}`);
+    return {
+      message: 'Código de verificação enviado para seu email!'
+    };
   }
 
-  private get prisma() {
-    return require('../config/database').default;
+  // NOVO: Verificar OTP de recuperação de senha
+  async verifyPasswordResetOTP(dto: VerifyPasswordResetOtpDto): Promise<{ isValid: boolean; message: string }> {
+    const user = await this.userRepository.findByEmail(dto.email);
+    if (!user) {
+      throw new ValidationError('Email não encontrado');
+    }
+
+    const maxAttempts = 5;
+    const attempts = user.reset_password_attempts || 0;
+
+    if (attempts >= maxAttempts) {
+      throw new ValidationError('Número máximo de tentativas excedido. Solicite um novo código.');
+    }
+
+    const isValid = this.otpService.isOTPValid(
+      dto.codigo,
+      user.reset_password_code,
+      user.reset_password_expira
+    );
+
+    if (!isValid) {
+      await this.userRepository.incrementResetPasswordAttempts(dto.email);
+      const remainingAttempts = maxAttempts - (attempts + 1);
+      throw new ValidationError(`Código inválido ou expirado. Você tem ${remainingAttempts} tentativa(s) restante(s).`);
+    }
+
+    logger.info(`OTP de recuperação verificado para: ${dto.email}`);
+
+    return {
+      isValid: true,
+      message: 'Código verificado com sucesso! Agora você pode redefinir sua senha.'
+    };
+  }
+
+  // NOVO: Redefinir senha com OTP
+  async resetPasswordWithOTP(dto: ResetPasswordWithOtpDto): Promise<{ message: string }> {
+    // Verificar se o OTP é válido
+    const user = await this.userRepository.findByPasswordResetOTP(dto.email, dto.codigo);
+
+    if (!user) {
+      throw new ValidationError('Código inválido ou expirado. Solicite um novo código.');
+    }
+
+    // Hash da nova senha
+    const hashedPassword = await hashSenha(dto.nova_senha);
+
+    // Atualizar senha e limpar OTP
+    await this.userRepository.updatePassword(user.id_usuario, hashedPassword);
+    await this.userRepository.clearPasswordResetOTP(dto.email);
+
+    logger.info(`Senha redefinida com OTP para usuário: ${user.email}`);
+
+    return {
+      message: 'Senha redefinida com sucesso! Faça login com sua nova senha.'
+    };
   }
 }
