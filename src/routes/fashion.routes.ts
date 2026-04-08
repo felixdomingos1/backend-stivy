@@ -146,4 +146,85 @@ router.get('/tipos/fazedores',
   fashionController.getTiposFazedores.bind(fashionController)
 );
 
+router.post('/modelos',
+  autenticar,
+  validate,
+  fashionController.criarModelo.bind(fashionController)
+);
+
+router.get('/modelos',
+  autenticar,
+  fashionController.listarModelosDaAgencia.bind(fashionController)
+);
+
+router.get('/modelos/:id',
+  fashionController.buscarModeloPorId.bind(fashionController)
+);
+
+router.put('/modelos/:id',
+  autenticar,
+  validate,
+  fashionController.atualizarModelo.bind(fashionController)
+);
+
+router.delete('/modelos/:id',
+  autenticar,
+  fashionController.removerModelo.bind(fashionController)
+);
+
+router.post('/modelos/:id/fotos',
+  autenticar,
+  uploadSingle,
+  handleUploadError,
+  fashionController.adicionarFotoModelo.bind(fashionController)
+);
+
+router.post('/servicos/:id/comentarios',
+  autenticar,
+  validate,
+  fashionController.comentarServico.bind(fashionController)
+);
+
+router.get('/servicos/:id/comentarios',
+  fashionController.listarComentariosServico.bind(fashionController)
+);
+
+router.post('/comentarios/:id/reacoes',
+  autenticar,
+  fashionController.reagirComentario.bind(fashionController)
+);
+
+router.delete('/comentarios/:id/reacoes',
+  autenticar,
+  fashionController.removerReacaoComentario.bind(fashionController)
+);
+
+router.delete('/comentarios/:id',
+  autenticar,
+  fashionController.deletarComentario.bind(fashionController)
+);
+
+router.post('/servicos/:id/reacoes',
+  autenticar,
+  fashionController.reagirServico.bind(fashionController)
+);
+
+router.delete('/servicos/:id/reacoes',
+  autenticar,
+  fashionController.removerReacaoServico.bind(fashionController)
+);
+
+router.get('/servicos/:id/reacoes',
+  fashionController.getReacoesServico.bind(fashionController)
+);
+
+router.post('/servicos/:id/compartilhar',
+  autenticar,
+  fashionController.compartilharServico.bind(fashionController)
+);
+
+router.get('/servicos/:id/compartilhamentos',
+  fashionController.getCompartilhamentosServico.bind(fashionController)
+);
+
 export default router;

@@ -3,12 +3,20 @@ import prisma from '../src/config/database';
 
 async function main() {
   console.log('🌱 Iniciando seed...');
-
   const adminSenha = await hashSenha('sistem123!@#');
-
   await prisma.usuario.upsert({
     where: { email: 'superadmin@stivy.com' },
-    update: {},
+    update: {
+      nome: 'Stivy Admin',
+      senha_hash: adminSenha,
+      telefone: '999999999',
+      tipo: 'sistem_admin',
+      status: 'ativo',
+      email_verificado: true,
+      email_verification_code: null,
+      email_verification_expira: null,
+      verification_attempts: 0
+    },
     create: {
       nome: 'Stivy Admin',
       email: 'superadmin@stivy.com',
@@ -16,10 +24,14 @@ async function main() {
       telefone: '999999999',
       tipo: 'sistem_admin',
       status: 'ativo',
+      email_verificado: true,
+      email_verification_code: null,
+      email_verification_expira: null,
+      verification_attempts: 0
     }
   });
 
-  console.log('✅ Seed concluído!');
+  console.log('✅ Admin criado e verificado!');
 }
 
 main()

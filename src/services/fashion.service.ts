@@ -31,7 +31,9 @@ export class FashionService {
       descricao: dto.descricao,
       categoria: dto.categoria,
       valor: dto.valor,
-      tempo_estimado: dto.tempo_estimado
+      tempo_estimado: dto.tempo_estimado,
+      imagem_url: dto.imagem_url, 
+      imagem_public_id: dto.imagem_public_id
     });
 
     logger.info(`Serviço criado: ${servico.titulo} - Fazedor: ${fazedor.id_fazedor}`);

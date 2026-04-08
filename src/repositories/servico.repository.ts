@@ -1,5 +1,4 @@
-// repositories/servico.repository.ts
-import { PrismaClient, Servico, Prisma } from '@prisma/client';
+import { PrismaClient, Servico } from '@prisma/client';
 import prisma from '../config/database';
 
 export interface CreateServicoData {
@@ -9,6 +8,7 @@ export interface CreateServicoData {
   categoria?: string;
   valor?: number;
   imagem_url?: string;
+  imagem_public_id?: string;
   tempo_estimado?: string;
 }
 

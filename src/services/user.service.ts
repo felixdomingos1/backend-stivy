@@ -78,6 +78,7 @@ export class UserService {
       nome: dto.nome,
       telefone: dto.telefone,
       foto_perfil: dto.foto_perfil,
+      foto_perfil_public_id: dto.foto_perfil_public_id ? dto.foto_perfil_public_id : "",
       bio: dto.bio
     });
 

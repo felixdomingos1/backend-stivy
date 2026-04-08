@@ -11,7 +11,7 @@ export interface EmailOptions {
 
 export class EmailService {
   private static instance: EmailService;
-  private transporter!: nodemailer.Transporter;
+  private transporter?: nodemailer.Transporter;
   private isConfigured: boolean;
   private connectionVerified: boolean = false;
   private initializationPromise: Promise<void> | null = null;
@@ -123,7 +123,7 @@ export class EmailService {
         setTimeout(() => reject(new Error('Timeout na verificação do email (10s)')), 10000);
       });
 
-      const verifyPromise = this.transporter.verify();
+      const verifyPromise = this.transporter && this.transporter.verify();
       await Promise.race([verifyPromise, timeoutPromise]);
 
       this.connectionVerified = true;
@@ -136,7 +136,6 @@ export class EmailService {
   }
 
   public async sendEmail(options: EmailOptions): Promise<void> {
-    // Garantir que a conexão está inicializada
     if (this.isConfigured && !this.connectionVerified) {
       await this.initialize();
     }
@@ -156,19 +155,17 @@ export class EmailService {
         text: options.text || this.stripHtml(options.html),
       };
 
-      // Timeout para envio
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error("Timeout de email após 15 segundos")), 15000);
       });
 
-      const sendPromise = this.transporter.sendMail(mailOptions);
+      const sendPromise = this.transporter && this.transporter.sendMail(mailOptions);
       const info = (await Promise.race([sendPromise, timeoutPromise])) as any;
 
       logger.info(`📧 Email enviado para ${options.to} - Message ID: ${info.messageId}`);
     } catch (error: any) {
       logger.error('❌ Falha no envio de email:', error.message);
 
-      // Se falhar por autenticação, marcar como não verificado
       if (error.message.includes('Invalid login') || error.message.includes('535')) {
         this.connectionVerified = false;
         throw new Error('Falha na autenticação do email. Verifique suas credenciais.');
@@ -179,13 +176,11 @@ export class EmailService {
   }
 
   private logEmailForDevelopment(options: EmailOptions): void {
-    // Extrair código OTP para desenvolvimento
     const otpMatch = options.html.match(/\b\d{6}\b/);
     if (otpMatch && otpMatch[0]) {
       logger.info(`🔑 [DEV] Código de verificação para ${options.to}: ${otpMatch[0]}`);
     }
 
-    // Extrair token de recuperação
     const tokenMatch = options.html.match(/token=([a-f0-9]+)/i);
     if (tokenMatch && tokenMatch[1]) {
       logger.info(`🔑 [DEV] Token de recuperação: ${tokenMatch[1]}`);
@@ -196,7 +191,6 @@ export class EmailService {
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
 
-  // Templates de email
   public async sendVerificationEmail(to: string, nome: string, otpCode: string): Promise<void> {
     const html = `
       <!DOCTYPE html>
@@ -385,5 +379,5 @@ export class EmailService {
       html
     });
   }
-  
+
 }

@@ -112,7 +112,6 @@ export class UserController {
         return;
       }
 
-      // Upload para Cloudinary
       const uploadResult = await processUpload(req.file, 'perfil', {
         width: 500,
         height: 500,
@@ -123,8 +122,7 @@ export class UserController {
         res.status(400).json({ error: 'Erro ao fazer upload da imagem' });
         return;
       }
-
-      // Buscar usuário atual para deletar foto antiga
+ 
       const user = await this.userService.getProfile(req.usuarioId);
       if (user.foto_perfil_public_id) {
         await cloudinaryService.deleteFile(user.foto_perfil_public_id);

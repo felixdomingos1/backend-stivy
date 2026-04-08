@@ -1,3 +1,4 @@
+// src/controller/fashion.controller.ts
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
 import { CreateServicoDto, UpdateServicoDto } from '../dtos/fashion.dto';
@@ -7,23 +8,39 @@ import { AvaliacaoRepository } from '../repositories/avaliacao.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { PortfolioRepository } from '../repositories/portfolio.repository';
 import { ServicoRepository } from '../repositories/servico.repository';
+import { ModeloRepository } from '../repositories/modelo.repository';
+import { ServicoComentarioRepository } from '../repositories/servico-comentario.repository';
+import { ServicoReacaoRepository } from '../repositories/servico-reacao.repository';
 import { cloudinaryService } from '../services/cloudinary.service';
 import { FashionService } from '../services/fashion.service';
 import { PortfolioService } from '../services/portfolio.service';
 import { ServicoImagemService } from '../services/servico-imagem.service';
+import { ModeloService } from '../services/modelo.service';
 import { NotFoundError, ValidationError } from '../utils/errors';
 import logger from '../utils/logger';
+import { ServicoComentarioService } from '../services/servico-comentario.service';
+import { ServicoReacaoService } from '../services/servico-reacao.service';
+import { ServicoCompartilhamentoService } from '../services/servico-compartilhamento.service';
+import { ServicoCompartilhamentoRepository } from '../repositories/servico-compartilhamento.repository';
 
 export class FashionController {
   private fashionService: FashionService;
   private portfolioService: PortfolioService;
   private servicoImagemService: ServicoImagemService;
+  private modeloService: ModeloService;
+  private servicoComentarioService: ServicoComentarioService;
+  private servicoReacaoService: ServicoReacaoService;
+  private servicoCompartilhamentoService: ServicoCompartilhamentoService;
 
   constructor() {
     const servicoRepository = new ServicoRepository();
     const fazedorRepository = new FazedorRepository();
     const avaliacaoRepository = new AvaliacaoRepository();
     const portfolioRepository = new PortfolioRepository();
+    const modeloRepository = new ModeloRepository();
+    const servicoComentarioRepository = new ServicoComentarioRepository();
+    const servicoReacaoRepository = new ServicoReacaoRepository();
+    const servicoCompartilhamentoRepository = new ServicoCompartilhamentoRepository();
 
     this.fashionService = new FashionService(
       servicoRepository,
@@ -32,6 +49,10 @@ export class FashionController {
     );
     this.portfolioService = new PortfolioService(portfolioRepository);
     this.servicoImagemService = new ServicoImagemService();
+    this.modeloService = new ModeloService(modeloRepository, fazedorRepository);
+    this.servicoComentarioService = new ServicoComentarioService(servicoComentarioRepository, servicoRepository);
+    this.servicoReacaoService = new ServicoReacaoService(servicoReacaoRepository);
+    this.servicoCompartilhamentoService = new ServicoCompartilhamentoService(servicoCompartilhamentoRepository);
   }
 
   criarServicoWithUpload = [
@@ -53,8 +74,7 @@ export class FashionController {
         return;
       }
 
-
-      const dto: CreateServicoDto = JSON.parse(req.body.data || '{}');
+      const dto: CreateServicoDto = req.body;
 
       if (req.file) {
         const uploadResult = await processUpload(req.file, 'servicos', {
@@ -259,11 +279,8 @@ export class FashionController {
         return;
       }
 
-
       const usuarioId = Array.isArray(req.usuarioId) ? req.usuarioId[0] : req.usuarioId;
       const { nota, comentario, id_fazedor } = req.body;
-
-      console.log(req.usuarioId, id_fazedor, nota, comentario);
 
       const result = await this.fashionService.avaliarFazedor(
         usuarioId,
@@ -333,49 +350,7 @@ export class FashionController {
     }
   }
 
-  async criarModelo(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
-
-      if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
-        return;
-      }
-
-      res.status(501).json({ error: 'Funcionalidade em desenvolvimento' });
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  async listarModelos(_: Request, res: Response): Promise<void> {
-    try {
-
-      res.status(501).json({ error: 'Funcionalidade em desenvolvimento' });
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  private handleError(error: any, res: Response): void {
-    logger.error('Erro no FashionController:', error);
-
-    if (error instanceof ValidationError) {
-      res.status(400).json({ success: false, error: error.message });
-    } else if (error instanceof NotFoundError) {
-      res.status(404).json({ success: false, error: error.message });
-    } else {
-      const message = process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Erro interno do servidor';
-      res.status(500).json({ success: false, error: message });
-    }
-  }
-
+  // ============= PORTFOLIO =============
   async adicionarPortfolio(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
@@ -495,6 +470,7 @@ export class FashionController {
     }
   }
 
+  // ============= SERVIÇO IMAGENS =============
   async adicionarImagensServico(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
@@ -610,12 +586,352 @@ export class FashionController {
     }
   }
 
-  async getFazedorByUserId(userId: string): Promise<any> {
+  // ============= MODELOS (Agência) =============
+  async criarModelo(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const fazedor = await this.fashionService.getFazedorByUserId(userId);
-      return fazedor;
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const data = req.body;
+      const result = await this.modeloService.criarModelo(req.usuarioId, data);
+
+      res.status(201).json({ success: true, data: result });
     } catch (error) {
-      throw new NotFoundError('Fazedor não encontrado');
+      this.handleError(error, res);
+    }
+  }
+
+  async listarModelosDaAgencia(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const { status, genero, search } = req.query;
+      const filters = {
+        status: status as string,
+        genero: genero as string,
+        search: search as string
+      };
+
+      const result = await this.modeloService.listarModelosDaAgencia(req.usuarioId, filters);
+
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async buscarModeloPorId(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const result = await this.modeloService.buscarModeloPorId(id);
+
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async atualizarModelo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = req.body;
+      const result = await this.modeloService.atualizarModelo(id, req.usuarioId, data);
+
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async removerModelo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      await this.modeloService.removerModelo(id, req.usuarioId);
+
+      res.json({ success: true, message: 'Modelo removido com sucesso' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async adicionarFotoModelo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ error: 'Nenhuma imagem enviada' });
+        return;
+      }
+
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { titulo, descricao, categoria } = req.body;
+
+      const result = await this.modeloService.adicionarFotoPortfolio(
+        id,
+        req.usuarioId,
+        req.file.buffer,
+        titulo,
+        descricao,
+        categoria
+      );
+
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  // ============= COMENTÁRIOS =============
+  async comentarServico(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { comentario, parent_id } = req.body;
+
+      const result = await this.servicoComentarioService.create({
+        id_servico: id,
+        id_usuario: req.usuarioId,
+        comentario,
+        parent_id
+      });
+
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async listarComentariosServico(req: Request, res: Response): Promise<void> {
+    try {
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { page = 1, limit = 20 } = req.query;
+
+      const result = await this.servicoComentarioService.findByServico(
+        id,
+        Number(page),
+        Number(limit)
+      );
+
+      res.json({ success: true, ...result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async reagirComentario(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const id_comentario = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { tipo } = req.body;
+
+      await this.servicoComentarioService.addReacao({
+        id_comentario,
+        id_usuario: req.usuarioId,
+        tipo
+      });
+
+      res.json({ success: true, message: 'Reação adicionada' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async removerReacaoComentario(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const id_comentario = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      await this.servicoComentarioService.removeReacao(id_comentario, req.usuarioId);
+
+      res.json({ success: true, message: 'Reação removida' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async deletarComentario(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const id_comentario = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      await this.servicoComentarioService.delete(id_comentario, req.usuarioId);
+
+      res.json({ success: true, message: 'Comentário removido' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  // ============= REAÇÕES =============
+  async reagirServico(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { tipo } = req.body;
+
+      await this.servicoReacaoService.addReacao({
+        id_servico: id,
+        id_usuario: req.usuarioId,
+        tipo
+      });
+
+      res.json({ success: true, message: 'Reação adicionada' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async removerReacaoServico(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      await this.servicoReacaoService.removeReacao(id, req.usuarioId);
+
+      res.json({ success: true, message: 'Reação removida' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async getReacoesServico(req: Request, res: Response): Promise<void> {
+    try {
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      const reacoes = await this.servicoReacaoService.getReacoesCount(id);
+      const usuarioReacao = (req as AuthRequest).usuarioId ?
+        await this.servicoReacaoService.getUserReacao(id, (req as AuthRequest).usuarioId!) : null;
+
+      res.json({
+        success: true,
+        data: {
+          counts: reacoes,
+          minha_reacao: usuarioReacao
+        }
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  // ============= COMPARTILHAMENTOS =============
+  async compartilharServico(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { plataforma } = req.body;
+
+      const result = await this.servicoCompartilhamentoService.create({
+        id_servico: id,
+        id_usuario: req.usuarioId,
+        plataforma
+      });
+
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async getCompartilhamentosServico(req: Request, res: Response): Promise<void> {
+    try {
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      const count = await this.servicoCompartilhamentoService.getCountByServico(id);
+
+      res.json({
+        success: true,
+        data: { compartilhamentos: count }
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  private handleError(error: any, res: Response): void {
+    logger.error('Erro no FashionController:', error);
+
+    if (error instanceof ValidationError) {
+      res.status(400).json({ success: false, error: error.message });
+    } else if (error instanceof NotFoundError) {
+      res.status(404).json({ success: false, error: error.message });
+    } else {
+      const message = process.env.NODE_ENV === 'development'
+        ? error.message
+        : 'Erro interno do servidor';
+      res.status(500).json({ success: false, error: message });
     }
   }
 }

@@ -77,3 +77,26 @@ export const verificarFazedor = async (
     res.status(500).json({ error: 'Erro ao verificar permissões' });
   }
 };
+
+export const verificarAdmin = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.usuarioId) {
+      res.status(401).json({ error: 'Não autorizado' });
+      return;
+    }
+
+    const user = await prisma.usuario.findUnique({
+      where: { id_usuario: req.usuarioId },
+      select: { tipo: true }
+    });
+
+    if (!user || user.tipo !== 'sistem_admin') {
+      res.status(403).json({ error: 'Acesso negado. Apenas administradores.' });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao verificar permissões' });
+  }
+};

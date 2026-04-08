@@ -103,7 +103,7 @@ model Usuario {
   email_verification_expira DateTime?
   verification_attempts     Int       @default(0)
   foto_perfil_public_id     String?   @db.VarChar(255)
-  anner_url                 String?   @db.VarChar(255)
+  banner_url                String?   @db.VarChar(255)
   banner_public_id          String?   @db.VarChar(255)
 
   stories                 Story[]
@@ -112,13 +112,17 @@ model Usuario {
   reset_password_expira   DateTime?
   reset_password_attempts Int            @default(0)
 
-  fazedor             Fazedor?
-  requisicoes         Requisicao[]         @relation("SolicitanteRequisicoes")
-  favoritos           Favorito[]
-  avaliacoesFeitas    Avaliacao[]          @relation("AvaliacoesFeitas")
-  notificacoes        Notificacao[]
-  eventosParticipados EventoParticipante[]
-  storyVisualizacaos  StoryVisualizacao[]
+  fazedor                  Fazedor?
+  requisicoes              Requisicao[]              @relation("SolicitanteRequisicoes")
+  favoritos                Favorito[]
+  avaliacoesFeitas         Avaliacao[]               @relation("AvaliacoesFeitas")
+  notificacoes             Notificacao[]
+  eventosParticipados      EventoParticipante[]
+  storyVisualizacaos       StoryVisualizacao[]
+  servicoComentarios       ServicoComentario[]
+  servicoComentarioReacaos ServicoComentarioReacao[]
+  servicoReacaos           ServicoReacao[]
+  servicoCompartilhamentos ServicoCompartilhamento[]
 
   @@map("USUARIO")
 }
@@ -213,15 +217,22 @@ model Modelo {
   cabelo String? @db.VarChar(50)
   olhos  String? @db.VarChar(50)
 
-  foto_url String? @db.VarChar(255)
-  book_url String? @db.VarChar(255)
+  foto_url       String? @db.VarChar(255)
+  book_url       String? @db.VarChar(255)
+  foto_public_id String? @db.VarChar(255)
 
   status        ModeloStatus @default(ativo)
   experiencia   String?      @db.Text
   data_cadastro DateTime     @default(now())
 
-  agencia     Agencia      @relation(fields: [id_agencia], references: [id_agencia], onDelete: Cascade)
+  idade         Int?
+  nacionalidade String? @db.VarChar(50)
+  habilidades   String? @db.Text
+  redes_sociais Json?
+
+  agencia     Agencia           @relation(fields: [id_agencia], references: [id_agencia], onDelete: Cascade)
   requisicoes Requisicao[]
+  portfolio   ModeloPortfolio[]
 
   @@map("MODELO")
 }
@@ -321,8 +332,11 @@ model Servico {
   tempo_estimado   String?         @db.VarChar(50)
   imagem_public_id String?         @db.VarChar(255)
 
-  fazedor     Fazedor      @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
-  requisicoes Requisicao[]
+  fazedor                  Fazedor                   @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
+  requisicoes              Requisicao[]
+  servicoComentarios       ServicoComentario[]
+  servicoReacaos           ServicoReacao[]
+  servicoCompartilhamentos ServicoCompartilhamento[]
 
   @@map("SERVICO")
 }
@@ -382,10 +396,10 @@ model Story {
   midia_url       String    @db.VarChar(255)
   midia_public_id String    @db.VarChar(255)
   tipo            StoryTipo @default(imagem)
-  duracao         Int       @default(5) // segundos
+  duracao         Int       @default(5)
 
   texto     String? @db.VarChar(255)
-  cor_fundo String? @db.VarChar(7) // hex color
+  cor_fundo String? @db.VarChar(7)
 
   expira_em    DateTime
   data_criacao DateTime @default(now())
@@ -517,4 +531,100 @@ model EventoParticipante {
 
   @@unique([id_evento, id_usuario])
   @@map("EVENTO_PARTICIPANTE")
+}
+
+enum ReacaoTipo {
+  like
+  love
+  wow
+  sad
+  angry
+}
+
+model ServicoComentario {
+  id_comentario String @id @default(uuid()) @db.Char(36)
+  id_servico    String @db.Char(36)
+  id_usuario    String @db.Char(36)
+
+  comentario String  @db.Text
+  parent_id  String? @db.Char(36)
+  curtidas   Int     @default(0)
+
+  data_criacao DateTime  @default(now())
+  data_edicao  DateTime?
+  editado      Boolean   @default(false)
+
+  servico       Servico                   @relation(fields: [id_servico], references: [id_servico], onDelete: Cascade)
+  usuario       Usuario                   @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  respostas     ServicoComentario[]       @relation("ComentarioRespostas")
+  comentarioPai ServicoComentario?        @relation("ComentarioRespostas", fields: [parent_id], references: [id_comentario])
+  reacoes       ServicoComentarioReacao[]
+
+  @@index([id_servico])
+  @@index([data_criacao])
+  @@map("SERVICO_COMENTARIO")
+}
+
+model ServicoComentarioReacao {
+  id_reacao     String     @id @default(uuid()) @db.Char(36)
+  id_comentario String     @db.Char(36)
+  id_usuario    String     @db.Char(36)
+  tipo          ReacaoTipo
+
+  data_reacao DateTime @default(now())
+
+  comentario ServicoComentario @relation(fields: [id_comentario], references: [id_comentario], onDelete: Cascade)
+  usuario    Usuario           @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@unique([id_comentario, id_usuario])
+  @@map("SERVICO_COMENTARIO_REACAO")
+}
+
+model ServicoReacao {
+  id_reacao  String     @id @default(uuid()) @db.Char(36)
+  id_servico String     @db.Char(36)
+  id_usuario String     @db.Char(36)
+  tipo       ReacaoTipo
+
+  data_reacao DateTime @default(now())
+
+  servico Servico @relation(fields: [id_servico], references: [id_servico], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@unique([id_servico, id_usuario])
+  @@map("SERVICO_REACAO")
+}
+
+model ServicoCompartilhamento {
+  id_compartilhamento String  @id @default(uuid()) @db.Char(36)
+  id_servico          String  @db.Char(36)
+  id_usuario          String  @db.Char(36)
+  plataforma          String? @db.VarChar(50)
+  link_compartilhado  String? @db.VarChar(500)
+
+  data_compartilhamento DateTime @default(now())
+
+  servico Servico @relation(fields: [id_servico], references: [id_servico], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@index([id_servico])
+  @@map("SERVICO_COMPARTILHAMENTO")
+}
+
+model ModeloPortfolio {
+  id_modelo_portfolio String @id @default(uuid()) @db.Char(36)
+  id_modelo           String @db.Char(36)
+
+  titulo           String? @db.VarChar(100)
+  descricao        String? @db.Text
+  imagem_url       String  @db.VarChar(255)
+  imagem_public_id String  @db.VarChar(255)
+  ordem            Int     @default(0)
+  categoria        String? @db.VarChar(50)
+
+  data_criacao DateTime @default(now())
+
+  modelo Modelo @relation(fields: [id_modelo], references: [id_modelo], onDelete: Cascade)
+
+  @@map("MODELO_PORTFOLIO")
 }

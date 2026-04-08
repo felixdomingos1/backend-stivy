@@ -17,6 +17,30 @@ export class FazedorRepository {
     this.prisma = prisma;
   }
 
+  async findAgenciaByFazedorId(id_fazedor: string): Promise<any> {
+    return await this.prisma.agencia.findUnique({
+      where: { id_fazedor },
+      include: {
+        fazedor: {
+          include: {
+            usuario: true
+          }
+        }
+      }
+    });
+  }
+
+  async findFazedorById(id_fazedor: string): Promise<any> {
+    return await this.prisma.fazedor.findUnique({
+      where: { id_fazedor },
+      include: {
+        usuario: true,
+        agencia: true,
+        portfolio: true
+      }
+    });
+  }
+
   async findById(id: string) {
     return await this.prisma.fazedor.findUnique({
       where: { id_fazedor: id },
@@ -40,13 +64,63 @@ export class FazedorRepository {
     tipo_fazedor: string;
     status_aprovacao?: string;
   }) {
-    return await this.prisma.fazedor.create({
+
+    const fazedor = await this.prisma.fazedor.create({
       data: {
         id_usuario: data.id_usuario,
         tipo_fazedor: data.tipo_fazedor as any,
         status_aprovacao: (data.status_aprovacao as any) || 'pendente'
+      },
+      include:{
+        usuario:true
       }
     });
+
+    switch (data.tipo_fazedor) {
+      case 'agencia':
+        await this.prisma.agencia.create({
+          data: {
+            id_fazedor: fazedor.id_fazedor,
+            nome_agencia: fazedor.usuario.nome
+          }
+        });
+        break;
+
+      case 'estilista':
+        await this.prisma.estilista.create({
+          data: {
+            id_fazedor: fazedor.id_fazedor
+          }
+        });
+        break;
+
+      case 'maquiador':
+        await this.prisma.maquiador.create({
+          data: {
+            id_fazedor: fazedor.id_fazedor
+          }
+        });
+        break;
+
+      case 'fotografo':
+        await this.prisma.fotografo.create({
+          data: {
+            id_fazedor: fazedor.id_fazedor
+          }
+        });
+        break;
+
+      case 'modelo_freelancer':
+        await this.prisma.modeloFreelancer.create({
+          data: {
+            id_fazedor: fazedor.id_fazedor,
+            nome_artistico:""
+          }
+        });
+        break;
+    }
+
+    return fazedor;
   }
 
   async findFazedorByUserId(userId: string) {

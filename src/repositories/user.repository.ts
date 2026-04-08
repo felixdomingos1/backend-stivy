@@ -41,7 +41,10 @@ export class UserRepository implements IUserRepository {
         verification_attempts: true,
         reset_password_attempts: true,
         reset_password_code: true,
-        reset_password_expira: true
+        reset_password_expira: true,
+        banner_url:true,
+        banner_public_id:true,
+        foto_perfil_public_id:true,
       }
     });
   }
@@ -125,6 +128,7 @@ export class UserRepository implements IUserRepository {
     telefone?: string;
     foto_perfil?: string;
     bio?: string;
+    foto_perfil_public_id:string
   }): Promise<Usuario> {
     return await this.prisma.usuario.update({
       where: { id_usuario: id },
@@ -132,6 +136,7 @@ export class UserRepository implements IUserRepository {
         nome: data.nome,
         telefone: data.telefone,
         foto_perfil: data.foto_perfil,
+        foto_perfil_public_id:data.foto_perfil_public_id
         // bio: data.bio
       }
     });
