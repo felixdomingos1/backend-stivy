@@ -1,5 +1,3 @@
-// src/services/modelo.service.ts (corrigido)
-
 import { ModeloRepository } from '../repositories/modelo.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { cloudinaryService } from './cloudinary.service';
@@ -13,9 +11,7 @@ export class ModeloService {
   ) { }
 
   async criarModelo(agenciaUserId: string, data: any): Promise<any> {
-    // Verificar se o usuário é uma agência
     const fazedor = await this.fazedorRepository.findFazedorByUserId(agenciaUserId);
-
     if (!fazedor) {
       throw new ValidationError('Perfil de fazedor não encontrado');
     }
@@ -28,8 +24,7 @@ export class ModeloService {
       throw new ValidationError('Sua agência precisa ser aprovada para cadastrar modelos');
     }
 
-    console.log(fazedor);
-    
+
     const agencia = await this.fazedorRepository.findAgenciaByFazedorId(fazedor.id_fazedor);
 
     if (!agencia) {
@@ -83,9 +78,7 @@ export class ModeloService {
       throw new NotFoundError('Modelo não encontrado');
     }
 
-    // Verificar permissão
     const fazedor = await this.fazedorRepository.findFazedorByUserId(agenciaUserId);
-
     if (!fazedor) {
       throw new ValidationError('Perfil de fazedor não encontrado');
     }

@@ -1,4 +1,3 @@
-// validations/event.validation.ts
 import { body, query, param } from 'express-validator';
 
 export const createEventoValidation = [

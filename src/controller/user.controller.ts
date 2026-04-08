@@ -122,7 +122,7 @@ export class UserController {
         res.status(400).json({ error: 'Erro ao fazer upload da imagem' });
         return;
       }
- 
+
       const user = await this.userService.getProfile(req.usuarioId);
       if (user.foto_perfil_public_id) {
         await cloudinaryService.deleteFile(user.foto_perfil_public_id);
@@ -237,10 +237,7 @@ export class UserController {
       this.handleError(error, res);
     }
   }
-
-  /**
-   * Tratamento de erros centralizado
-   */
+ 
   private handleError(error: any, res: Response): void {
     logger.error('Erro na requisição do usuário:', error);
 

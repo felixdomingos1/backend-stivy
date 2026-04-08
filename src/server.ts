@@ -69,10 +69,10 @@ async function startServer(): Promise<void> {
   app.listen(PORT, () => {
     console.log(`
     SERVIDOR STIVY INICIADO COM SUCESSO!
-    API: http://localhost:${PORT}
+    API: http://localhost:${PORT}/api/v1
     Ambiente: ${process.env.NODE_ENV || 'development'}
     Redis: ${redisConnected ? '✅ CONECTADO' : '❌ DESCONECTADO'}
-    Health: http://localhost:${PORT}/health
+    Health: http://localhost:${PORT}/api/v1/health
     `);
   });
 }

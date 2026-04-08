@@ -169,8 +169,6 @@ export class AuthController {
 
   async logout(req: AuthRequest, res: Response): Promise<void> {
     try {
-      // Aqui você pode implementar blacklist de tokens no Redis
-      // Por enquanto, apenas retorna sucesso
       res.json({
         success: true,
         message: 'Logout realizado com sucesso'

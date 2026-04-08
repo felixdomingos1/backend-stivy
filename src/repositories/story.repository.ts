@@ -1,4 +1,3 @@
-// src/repositories/story.repository.ts
 import { PrismaClient, Story, StoryTipo } from '@prisma/client';
 import prisma from '../config/database';
 

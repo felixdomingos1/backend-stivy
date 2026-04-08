@@ -1,4 +1,3 @@
-// dtos/auth.dto.ts
 export interface RegisterUserDto {
   nome: string;
   email: string;
@@ -42,7 +41,7 @@ export interface AuthResponseDto {
   message: string;
   token?: string;
   requiresVerification?: boolean;
-  resetToken?: string; // Deprecated, manter para compatibilidade
+  resetToken?: string;
   usuario: {
     id: string;
     nome: string;

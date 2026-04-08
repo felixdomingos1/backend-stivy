@@ -1,4 +1,3 @@
-// routes/index.ts
 import { Router } from 'express';
 import authRoutes from './auth.routes';
 import userRoutes from './user.routes';
@@ -20,7 +19,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/admin', adminRoutes);
 router.use('/stories', storyRoutes);
 
-router.get('/health', (req, res) => {
+router.get('/health', (_, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),

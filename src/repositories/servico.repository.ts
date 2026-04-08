@@ -31,7 +31,6 @@ export interface ServicoFilters {
   search?: string;
 }
 
-// Tipo para Servico com relacionamentos
 export type ServicoWithRelations = Servico & {
   fazedor: {
     id_fazedor: string;
@@ -282,7 +281,6 @@ export class ServicoRepository {
       ? servicos.reduce((sum, s) => sum + (s.valor?.toNumber() || 0), 0) / totalServicos
       : 0;
 
-    // Requisições por status
     const requisicoesPorStatus = {
       pendentes: 0,
       aceitas: 0,

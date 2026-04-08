@@ -119,7 +119,6 @@ export class AdminController {
         return;
       }
 
-      // Atualizar status
       const updated = await prisma.fazedor.update({
         where: { id_fazedor: id },
         data: {

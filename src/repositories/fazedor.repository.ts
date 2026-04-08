@@ -1,4 +1,3 @@
-// repositories/fazedor.repository.ts
 import { PrismaClient } from '@prisma/client';
 import prisma from '../config/database';
 
@@ -173,7 +172,6 @@ export class FazedorRepository {
       };
     }
 
-    // Busca por texto (nome do usuário ou biografia)
     if (filters?.search) {
       where.OR = [
         {
@@ -196,7 +194,6 @@ export class FazedorRepository {
       ];
     }
 
-    // Filtrar por cidade (através do endereço)
     if (filters?.cidade) {
       where.endereco = {
         contains: filters.cidade
@@ -275,7 +272,6 @@ export class FazedorRepository {
     return result;
   }
 
-  // NOVA FUNÇÃO: count com filtros
   async count(filters?: FazedorFilters): Promise<number> {
     const where: any = {};
 
@@ -326,7 +322,6 @@ export class FazedorRepository {
     return await this.prisma.fazedor.count({ where });
   }
 
-  // Função adicional: buscar fazedores por tipo
   async findByTipo(tipo: string, skip?: number, take?: number): Promise<any[]> {
     return await this.prisma.fazedor.findMany({
       where: {
@@ -349,7 +344,6 @@ export class FazedorRepository {
     });
   }
 
-  // Função adicional: buscar fazedores por avaliação
   async findByAvaliacao(minNota: number, skip?: number, take?: number): Promise<any[]> {
     return await this.prisma.fazedor.findMany({
       where: {
@@ -377,7 +371,6 @@ export class FazedorRepository {
     });
   }
 
-  // Função adicional: buscar fazedores pendentes (para admin)
   async findPendentes(skip?: number, take?: number): Promise<any[]> {
     return await this.prisma.fazedor.findMany({
       where: {
@@ -400,7 +393,6 @@ export class FazedorRepository {
     });
   }
 
-  // Função adicional: aprovar fazedor
   async aprovarFazedor(id: string): Promise<any> {
     return await this.prisma.fazedor.update({
       where: { id_fazedor: id },
@@ -411,7 +403,6 @@ export class FazedorRepository {
     });
   }
 
-  // Função adicional: rejeitar fazedor
   async rejeitarFazedor(id: string, motivo?: string): Promise<any> {
     return await this.prisma.fazedor.update({
       where: { id_fazedor: id },
@@ -421,7 +412,6 @@ export class FazedorRepository {
     });
   }
 
-  // Função adicional: atualizar avaliação média
   async updateAvaliacaoMedia(id: string, media: number, total: number): Promise<any> {
     return await this.prisma.fazedor.update({
       where: { id_fazedor: id },
@@ -432,10 +422,7 @@ export class FazedorRepository {
     });
   }
 
-  // Função adicional: buscar fazedores por proximidade (se tiver latitude/longitude)
   async findByProximidade(latitude: number, longitude: number, raioKm: number = 10): Promise<any[]> {
-    // Nota: Esta é uma implementação simplificada
-    // Para uma busca precisa, considere usar extensões GIS no MySQL
     return await this.prisma.fazedor.findMany({
       where: {
         status_aprovacao: 'aprovado',
@@ -457,7 +444,6 @@ export class FazedorRepository {
     });
   }
 
-  // Função adicional: estatísticas gerais
   async getEstatisticasGerais(): Promise<any> {
     const [total, porTipo, porStatus, aprovados, pendentes, rejeitados] = await Promise.all([
       this.prisma.fazedor.count(),

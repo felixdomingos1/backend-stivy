@@ -1,4 +1,3 @@
-// src/services/email.service.ts
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 
@@ -51,7 +50,6 @@ export class EmailService {
       process.env.SMTP_PASS);
 
     if (hasNewConfig) {
-      // Configuração SMTP (recomendado para Gmail)
       this.transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: parseInt(process.env.SMTP_PORT || "587"),
@@ -60,15 +58,14 @@ export class EmailService {
           user: process.env.SMTP_USER,
           pass: this.cleanPassword(process.env.SMTP_PASS),
         },
-        debug: false, // Desabilitar debug em produção
+        debug: false,
         logger: false,
-        pool: true, // Pool de conexões
+        pool: true,
         maxConnections: 5,
         maxMessages: 100,
-        rateLimit: 5, // Limitar envios por segundo
+        rateLimit: 5,
       });
     } else {
-      // Configuração de serviço
       this.transporter = nodemailer.createTransport({
         service: process.env.EMAIL_SERVICE,
         auth: {
@@ -88,13 +85,9 @@ export class EmailService {
 
   private cleanPassword(password: string | undefined): string {
     if (!password) return '';
-    // Remove espaços extras e quebras de linha
     return password.trim().replace(/\s+/g, '');
   }
 
-  /**
-   * Inicializa a conexão com o serviço de email (uma única vez)
-   */
   public async initialize(): Promise<void> {
     if (!this.isConfigured) return;
 
@@ -118,7 +111,6 @@ export class EmailService {
 
   private async verifyConnection(): Promise<void> {
     try {
-      // Verificar conexão com timeout
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Timeout na verificação do email (10s)')), 10000);
       });

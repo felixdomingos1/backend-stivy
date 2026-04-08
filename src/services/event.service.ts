@@ -119,7 +119,6 @@ export class EventService {
 
     await this.eventoRepository.cancelEvent(id);
 
-    // Notificar participantes
     const participantes = await this.eventoRepository.getParticipantes(id);
     if (participantes.length > 0) {
       await this.notificacaoRepository.enviarNotificacaoEvento(

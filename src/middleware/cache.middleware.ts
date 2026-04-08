@@ -1,4 +1,3 @@
-// middleware/cache.middleware.ts
 import { Request, Response, NextFunction } from 'express';
 import { cacheService } from '../config/redis';
 
@@ -9,7 +8,7 @@ export interface CacheOptions {
 }
 
 export const cacheResponse = (options: CacheOptions = {}) => {
-  const duration = options.duration || 300; // 5 minutos padrão
+  const duration = options.duration || 300;
   const keyPrefix = options.keyPrefix || 'response';
   const excludeParams = options.excludeParams || [];
 

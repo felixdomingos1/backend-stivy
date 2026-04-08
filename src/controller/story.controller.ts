@@ -33,7 +33,6 @@ export class StoryController {
         quality: 90
       });
 
-      // Expira em 24 horas
       const expira_em = new Date();
       expira_em.setHours(expira_em.getHours() + 24);
 
@@ -48,7 +47,6 @@ export class StoryController {
         expira_em
       });
 
-      // Agendar deleção automática após 24h (opcional: usar cron job)
       this.scheduleStoryDeletion(story.id_story, expira_em);
 
       res.status(201).json({
@@ -64,8 +62,6 @@ export class StoryController {
   async listarStories(req: AuthRequest, res: Response): Promise<void> {
     try {
       const stories = await this.storyRepository.findActiveStories(50);
-
-      // Marcar visualizações do usuário atual
       if (req.usuarioId) {
         for (const story of stories) {
           const jaVisualizou = story.visualizacoes.some(
@@ -80,7 +76,6 @@ export class StoryController {
         }
       }
 
-      // Agrupar por usuário
       const storiesByUser = stories.reduce((acc: any, story: any) => {
         const userId = story.id_usuario;
         if (!acc[userId]) {

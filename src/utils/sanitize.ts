@@ -1,4 +1,3 @@
-// utils/sanitize.ts
 import xss from 'xss';
 
 export class SanitizeUtils {

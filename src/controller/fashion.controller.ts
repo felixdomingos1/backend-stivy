@@ -1,4 +1,3 @@
-// src/controller/fashion.controller.ts
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
 import { CreateServicoDto, UpdateServicoDto } from '../dtos/fashion.dto';
@@ -350,7 +349,6 @@ export class FashionController {
     }
   }
 
-  // ============= PORTFOLIO =============
   async adicionarPortfolio(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
@@ -470,7 +468,6 @@ export class FashionController {
     }
   }
 
-  // ============= SERVIÇO IMAGENS =============
   async adicionarImagensServico(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
@@ -586,7 +583,6 @@ export class FashionController {
     }
   }
 
-  // ============= MODELOS (Agência) =============
   async criarModelo(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
@@ -599,10 +595,8 @@ export class FashionController {
         res.status(401).json({ error: 'Não autorizado' });
         return;
       }
-
       const data = req.body;
       const result = await this.modeloService.criarModelo(req.usuarioId, data);
-
       res.status(201).json({ success: true, data: result });
     } catch (error) {
       this.handleError(error, res);
@@ -714,7 +708,6 @@ export class FashionController {
     }
   }
 
-  // ============= COMENTÁRIOS =============
   async comentarServico(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
@@ -817,7 +810,6 @@ export class FashionController {
     }
   }
 
-  // ============= REAÇÕES =============
   async reagirServico(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
@@ -880,7 +872,6 @@ export class FashionController {
     }
   }
 
-  // ============= COMPARTILHAMENTOS =============
   async compartilharServico(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {

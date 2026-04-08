@@ -1,4 +1,3 @@
-// src/repositories/servico-reacao.repository.ts
 import { PrismaClient, ReacaoTipo } from '@prisma/client';
 import prisma from '../config/database';
 

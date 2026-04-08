@@ -1,4 +1,3 @@
-// services/user.service.ts
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { UpdateUserDto, UpdatePasswordDto } from '../dtos/user.dto';
@@ -14,17 +13,23 @@ export class UserService {
 
   async pegarTodos(): Promise<any[]> {
     const users = await this.userRepository.findAll();
-
     return users.map(user => ({
       id: user.id_usuario,
       nome: user.nome,
       email: user.email,
-      telefone: user.telefone,
-      tipo: user.tipo,
-      foto_perfil: user.foto_perfil,
-      bio: user.bio,
-      data_cadastro: user.data_cadastro,
-      status: user.status
+      perfil: {
+        telefone: user.telefone,
+        foto: user.foto_perfil,
+        status: user.status,
+        tipo: user.tipo,
+      },
+      fazedor: user.fazedor,
+      favoritos: user.favoritos,
+      notificacoes: user.notificacoes,
+      requisicoes: user.requisicoes,
+      eventos: user.eventosParticipados,
+      stories: user.stories,
+      estatisticas: user._count,
     }));
   }
 
@@ -105,7 +110,6 @@ export class UserService {
       throw new NotFoundError('Usuário não encontrado');
     }
 
-    // Verificar senha atual
     const isPasswordValid = await compararSenha(dto.senha_atual, user.senha_hash);
     if (!isPasswordValid) {
       throw new AuthenticationError('Senha atual incorreta');
@@ -156,7 +160,6 @@ export class UserService {
       throw new NotFoundError('Fazedor não encontrado');
     }
 
-    // Verificar se já é favorito
     const isFav = await this.userRepository.isFavorito(userId, fazedorId);
     if (isFav) {
       throw new ValidationError('Fazedor já está nos favoritos');
@@ -169,7 +172,6 @@ export class UserService {
   }
 
   async removeFavorito(userId: string, fazedorId: string): Promise<void> {
-    // Verificar se é favorito
     const isFav = await this.userRepository.isFavorito(userId, fazedorId);
     if (!isFav) {
       throw new ValidationError('Fazedor não está nos favoritos');
@@ -196,7 +198,6 @@ export class UserService {
       dias_membro: Math.floor((Date.now() - user.data_cadastro.getTime()) / (1000 * 60 * 60 * 24))
     };
 
-    // Se for fazedor, adiciona estatísticas específicas
     if (fazedor) {
       const servicos = await this.prisma?.servico.count({
         where: { id_fazedor: fazedor.id_fazedor }
@@ -212,11 +213,6 @@ export class UserService {
 
       estatisticas = {
         ...estatisticas,
-        // total_servicos: servicos || 0,
-        // total_eventos: eventos || 0,
-        // total_avaliacoes: avaliacoes || 0,
-        // avaliacao_media: fazedor.avaliacao_media,
-        // status_aprovacao: fazedor.status_aprovacao
       };
     }
 

@@ -60,7 +60,6 @@ export class AvaliacaoRepository {
       }
     });
 
-    // Atualizar média e total de avaliações do fazedor
     await this.updateFazedorMedia(data.id_avaliado);
 
     return avaliacao;
@@ -169,7 +168,6 @@ export class AvaliacaoRepository {
       }
     });
 
-    // Atualizar média do fazedor
     await this.updateFazedorMedia(avaliacao.id_avaliado);
 
     return avaliacao;
@@ -180,7 +178,6 @@ export class AvaliacaoRepository {
       where: { id_avaliacao: id }
     });
 
-    // Atualizar média do fazedor
     await this.updateFazedorMedia(avaliacao.id_avaliado);
 
     return avaliacao;
@@ -251,7 +248,6 @@ export class AvaliacaoRepository {
     const media = await this.getMediaAvaliacao(id_fazedor);
     const distribuicao = await this.getDistribuicaoNotas(id_fazedor);
 
-    // Avaliações dos últimos 30 dias
     const ultimos30Dias = new Date();
     ultimos30Dias.setDate(ultimos30Dias.getDate() - 30);
 
@@ -262,7 +258,6 @@ export class AvaliacaoRepository {
       }
     });
 
-    // Avaliações com comentário
     const avaliacoesComComentario = await this.prisma.avaliacao.count({
       where: {
         id_avaliado: id_fazedor,

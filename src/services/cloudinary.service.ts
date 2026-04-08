@@ -141,7 +141,6 @@ export class CloudinaryService {
 
   extractPublicIdFromUrl(url: string): string | null {
     try {
-      // Padrão: https://res.cloudinary.com/cloud_name/image/upload/v1234567890/folder/filename.jpg
       const matches = url.match(/\/upload\/v\d+\/(.+)\.\w+$/);
       if (matches && matches[1]) {
         return matches[1];

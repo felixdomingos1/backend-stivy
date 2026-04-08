@@ -1,4 +1,3 @@
-// services/fashion.service.ts
 import { ServicoRepository, ServicoFilters } from '../repositories/servico.repository';
 import { FazedorRepository, FazedorFilters } from '../repositories/fazedor.repository';
 import { AvaliacaoRepository } from '../repositories/avaliacao.repository';
@@ -32,7 +31,7 @@ export class FashionService {
       categoria: dto.categoria,
       valor: dto.valor,
       tempo_estimado: dto.tempo_estimado,
-      imagem_url: dto.imagem_url, 
+      imagem_url: dto.imagem_url,
       imagem_public_id: dto.imagem_public_id
     });
 
@@ -81,7 +80,6 @@ export class FashionService {
       throw new NotFoundError('Serviço não encontrado');
     }
 
-    // Verificar se o fazedor é o dono do serviço
     const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorUserId);
     if (!fazedor || servico.id_fazedor !== fazedor.id_fazedor) {
       throw new ValidationError('Você não tem permissão para editar este serviço');

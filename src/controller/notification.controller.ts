@@ -1,4 +1,3 @@
-// controllers/notification.controller.ts
 import { Response } from 'express';
 import { validationResult } from 'express-validator';
 import { AuthRequest } from '../middleware/auth.middleware';

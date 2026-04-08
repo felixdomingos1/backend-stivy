@@ -241,7 +241,6 @@ export class EventoRepository {
       }
     });
 
-    // Atualizar vagas disponíveis
     await this.prisma.evento.update({
       where: { id_evento },
       data: {
@@ -262,7 +261,6 @@ export class EventoRepository {
       }
     });
 
-    // Atualizar vagas disponíveis
     await this.prisma.evento.update({
       where: { id_evento },
       data: {

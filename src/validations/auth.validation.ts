@@ -110,7 +110,6 @@ export const verifyEmailValidation = [
     .withMessage('Código deve conter apenas números')
 ];
 
-// validations/auth.validation.ts
 export const requestPasswordResetValidation = [
   body('email')
     .isEmail()

@@ -1,4 +1,3 @@
-// routes/auth.routes.ts
 import { Router } from 'express';
 import { autenticar } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validation.middleware';
@@ -15,7 +14,7 @@ import {
 
 const router = Router();
 const authController = new AuthController();
- 
+
 router.post('/registrar', registerValidation, validate, authController.registrar.bind(authController));
 router.post('/login', loginValidation, validate, authController.login.bind(authController));
 

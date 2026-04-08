@@ -13,7 +13,6 @@ export class ServicoCompartilhamentoService {
     id_usuario: string;
     plataforma?: string;
   }): Promise<any> {
-    // Verificar se serviço existe (opcional, se tiver o repositório)
     if (this.servicoRepository) {
       const servico = await this.servicoRepository.findById(data.id_servico);
       if (!servico) {

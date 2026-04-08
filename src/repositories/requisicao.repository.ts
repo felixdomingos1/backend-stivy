@@ -1,4 +1,3 @@
-// repositories/requisicao.repository.ts
 import { PrismaClient, Requisicao, Prisma } from '@prisma/client';
 import prisma from '../config/database';
 
@@ -26,7 +25,6 @@ export interface RequisicaoFilters {
   data_fim?: Date;
 }
 
-// Tipo para Requisicao com todos os relacionamentos
 export type RequisicaoWithRelations = Prisma.RequisicaoGetPayload<{
   include: {
     solicitante: {

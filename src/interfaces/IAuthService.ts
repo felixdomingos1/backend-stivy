@@ -5,5 +5,4 @@ export interface IAuthService {
   login(dto: LoginDto): Promise<AuthResponseDto>;
   getUserProfile(userId: string): Promise<any>;
   requestPasswordReset(email: string): Promise<{message: string}>;
-  // resetPassword(token: string, newPassword: string): Promise<void>;
 }

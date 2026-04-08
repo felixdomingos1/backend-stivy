@@ -1,4 +1,3 @@
-// services/auth.service.ts (atualizado)
 import { IAuthService } from '../interfaces/IAuthService';
 import { RegisterUserDto, LoginDto, AuthResponseDto, VerifyEmailDto, RequestPasswordResetDto, VerifyPasswordResetOtpDto, ResetPasswordWithOtpDto } from '../dtos/auth.dto';
 import { UserRepository } from '../repositories/user.repository';
@@ -266,7 +265,6 @@ export class AuthService implements IAuthService {
     };
   }
 
-  // NOVO: Verificar OTP de recuperação de senha
   async verifyPasswordResetOTP(dto: VerifyPasswordResetOtpDto): Promise<{ isValid: boolean; message: string }> {
     const user = await this.userRepository.findByEmail(dto.email);
     if (!user) {
@@ -300,19 +298,15 @@ export class AuthService implements IAuthService {
     };
   }
 
-  // NOVO: Redefinir senha com OTP
   async resetPasswordWithOTP(dto: ResetPasswordWithOtpDto): Promise<{ message: string }> {
-    // Verificar se o OTP é válido
     const user = await this.userRepository.findByPasswordResetOTP(dto.email, dto.codigo);
 
     if (!user) {
       throw new ValidationError('Código inválido ou expirado. Solicite um novo código.');
     }
 
-    // Hash da nova senha
     const hashedPassword = await hashSenha(dto.nova_senha);
 
-    // Atualizar senha e limpar OTP
     await this.userRepository.updatePassword(user.id_usuario, hashedPassword);
     await this.userRepository.clearPasswordResetOTP(dto.email);
 

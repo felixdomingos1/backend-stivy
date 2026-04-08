@@ -1,4 +1,3 @@
-// repositories/user.repository.ts
 import { Prisma, PrismaClient, Usuario } from '@prisma/client';
 import prisma from '../config/database';
 import { IUserRepository } from '../interfaces/IUserRepository';
@@ -123,22 +122,26 @@ export class UserRepository implements IUserRepository {
   }
 
 
-  async updateUser(id: string, data: {
-    nome?: string;
-    telefone?: string;
-    foto_perfil?: string;
-    bio?: string;
-    foto_perfil_public_id:string
-  }): Promise<Usuario> {
+  async updateUser(id: string, data: any): Promise<Usuario> {
+    const allowedFields = [
+      'nome',
+      'telefone',
+      'tipo',
+      'status',
+      'banner_url',
+      'banner_public_id'
+    ];
+
+    const filteredData = Object.keys(data)
+      .filter(key => allowedFields.includes(key))
+      .reduce((obj, key) => {
+        obj[key] = data[key];
+        return obj;
+      }, {} as any);
+
     return await this.prisma.usuario.update({
       where: { id_usuario: id },
-      data: {
-        nome: data.nome,
-        telefone: data.telefone,
-        foto_perfil: data.foto_perfil,
-        foto_perfil_public_id:data.foto_perfil_public_id
-        // bio: data.bio
-      }
+      data: filteredData
     });
   }
 
@@ -253,7 +256,9 @@ export class UserRepository implements IUserRepository {
         notificacoes: true,
         requisicoes: true,
         eventosParticipados: true,
-        avaliacoesFeitas: true
+        avaliacoesFeitas: true,
+        stories:true,
+        _count:true
       }
     });
   }

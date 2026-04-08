@@ -1,4 +1,3 @@
-// controllers/event.controller.ts
 import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { validationResult } from 'express-validator';

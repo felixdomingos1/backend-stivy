@@ -1,7 +1,5 @@
-// validations/fashion.validation.ts
 import { body, query, param } from 'express-validator';
 
-// Validações para Serviços
 export const createServicoValidation = [
   body('titulo')
     .notEmpty()
@@ -118,7 +116,6 @@ export const listServicosValidation = [
     .toInt()
 ];
 
-// Validações para Fazedores
 export const listFazedoresValidation = [
   query('tipo_fazedor')
     .optional()
@@ -157,7 +154,6 @@ export const getFazedorByIdValidation = [
     .withMessage('ID do fazedor inválido')
 ];
 
-// Validações para Avaliações
 export const createAvaliacaoValidation = [
   body('id_fazedor')
     .isUUID()
