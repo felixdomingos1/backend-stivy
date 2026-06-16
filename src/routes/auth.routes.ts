@@ -6,7 +6,6 @@ import {
   registerValidation,
   loginValidation,
   verifyEmailValidation,
-  resendOTPValidation,
   requestPasswordResetValidation,
   verifyPasswordResetOTPValidation,
   resetPasswordWithOTPValidation
@@ -19,7 +18,7 @@ router.post('/registrar', registerValidation, validate, authController.registrar
 router.post('/login', loginValidation, validate, authController.login.bind(authController));
 
 router.post('/verificar-email', verifyEmailValidation, validate, authController.verificarEmail.bind(authController));
-router.post('/reenviar-otp', resendOTPValidation, validate, authController.reenviarOTP.bind(authController));
+router.post('/reenviar-otp', validate, authController.reenviarOTP.bind(authController));
 
 router.post('/recuperar-senha', requestPasswordResetValidation, validate, authController.recuperarSenha.bind(authController));
 router.post('/verificar-codigo-recuperacao', verifyPasswordResetOTPValidation, validate, authController.verificarCodigoRecuperacao.bind(authController));

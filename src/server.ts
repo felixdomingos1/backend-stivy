@@ -9,7 +9,7 @@ import app from './app';
 import { EmailService } from './services/email.service';
 import logger from './utils/logger';
 
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 async function startServer(): Promise<void> {
   console.log('🔄 Conectando ao Redis...');
@@ -66,7 +66,7 @@ async function startServer(): Promise<void> {
   }
 
   console.log(`🚀 Iniciando servidor na porta ${PORT}...`);
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`
     SERVIDOR STIVY INICIADO COM SUCESSO!
     API: http://localhost:${PORT}/api/v1

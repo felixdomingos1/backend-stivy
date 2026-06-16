@@ -1,9 +1,11 @@
+// backend/src/services/user.service.ts
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { UpdateUserDto, UpdatePasswordDto } from '../dtos/user.dto';
 import { compararSenha, hashSenha } from '../utils/bcrypt';
 import { ValidationError, AuthenticationError, NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
+import prisma from '../config/database'; // ✅ Importar diretamente
 
 export class UserService {
   constructor(
@@ -73,6 +75,40 @@ export class UserService {
     };
   }
 
+  async getFazedorByUserId(userId: string): Promise<any> {
+    return await this.fazedorRepository.findFazedorByUserId(userId);
+  }
+
+  // ✅ CORRIGIDO - Usar prisma importado diretamente
+  async getMeusServicos(fazedorId: string): Promise<any[]> {
+    try {
+      const servicos = await prisma.servico.findMany({
+        where: { id_fazedor: fazedorId },
+        include: {
+          fazedor: {
+            include: {
+              usuario: {
+                select: {
+                  nome: true,
+                  foto_perfil: true,
+                  email: true
+                }
+              }
+            }
+          },
+          imagens: {
+            orderBy: { ordem: 'asc' }
+          }
+        },
+        orderBy: { data_criacao: 'desc' }
+      });
+      return servicos;
+    } catch (error) {
+      console.error('Erro ao buscar serviços:', error);
+      return [];
+    }
+  }
+
   async updateProfile(userId: string, dto: UpdateUserDto): Promise<any> {
     const user = await this.userRepository.findById(userId);
     if (!user) {
@@ -131,7 +167,7 @@ export class UserService {
         foto_perfil_url: updatedUser.foto_perfil,
         foto_perfil_public_id: updatedUser.foto_perfil_public_id
       };
-    } catch (error:any) {
+    } catch (error: any) {
       throw new Error(`Erro ao atualizar foto de perfil: ${error.message}`);
     }
   }
@@ -194,32 +230,19 @@ export class UserService {
 
     let estatisticas = {
       total_favoritos: favoritos.length,
+      total_servicos: 0,
+      total_seguidores: 0,
+      total_seguindo: 0,
       data_cadastro: user.data_cadastro,
-      dias_membro: Math.floor((Date.now() - user.data_cadastro.getTime()) / (1000 * 60 * 60 * 24))
     };
 
     if (fazedor) {
-      const servicos = await this.prisma?.servico.count({
+      const servicos = await prisma.servico.count({
         where: { id_fazedor: fazedor.id_fazedor }
       });
-
-      const eventos = await this.prisma?.evento.count({
-        where: { id_organizador: fazedor.id_fazedor }
-      });
-
-      const avaliacoes = await this.prisma?.avaliacao.count({
-        where: { id_avaliado: fazedor.id_fazedor }
-      });
-
-      estatisticas = {
-        ...estatisticas,
-      };
+      estatisticas.total_servicos = servicos;
     }
 
     return estatisticas;
-  }
-
-  private get prisma() {
-    return require('../config/database').default;
   }
 }

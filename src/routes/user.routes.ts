@@ -27,4 +27,7 @@ router.delete('/favoritos/:id_fazedor', favoritoIdValidation, userController.rem
 
 router.get('/estatisticas', userController.getEstatisticas.bind(userController));
 
+router.get('/meus-servicos', userController.getMeusServicos.bind(userController));
+
+router.post('/logout', userController.logout.bind(userController));
 export default router;

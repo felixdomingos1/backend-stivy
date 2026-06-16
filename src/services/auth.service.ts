@@ -27,9 +27,13 @@ export class AuthService implements IAuthService {
       throw new ValidationError('Email já cadastrado');
     }
 
-    if (dto.tipo === 'fazedor' && !dto.tipo_fazedor) {
-      throw new AuthorizationError('Precisas enviar o tipo de fazedor')
+    if (dto.tipo === 'fazedor') {
+      if (!dto.tipo_fazedor) {
+        throw new AuthorizationError('Precisas enviar o tipo de fazedor')
+      }
+
     }
+
     const hashedPassword = await hashSenha(dto.senha);
     const otpCode = this.otpService.generateOTP();
     const otpExpiration = this.otpService.getExpirationDate();
@@ -155,8 +159,8 @@ export class AuthService implements IAuthService {
     };
   }
 
-  async resendVerificationCode(userId: string): Promise<{ message: string }> {
-    const user = await this.userRepository.findById(userId);
+  async resendVerificationCode(email: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findByEmail(email);
     if (!user) {
       throw new ValidationError('Usuário não encontrado');
     }
@@ -198,9 +202,9 @@ export class AuthService implements IAuthService {
       throw new AuthenticationError('Usuário bloqueado ou inativo');
     }
 
-    if (!user.email_verificado) {
-      throw new AuthenticationError('Email não verificado. Verifique sua caixa de entrada.');
-    }
+    // if (!user.email_verificado) {
+    //   throw new AuthenticationError('Email não verificado. Verifique sua caixa de entrada.');
+    // }
 
     await this.userRepository.updateLastAccess(user.id_usuario);
 

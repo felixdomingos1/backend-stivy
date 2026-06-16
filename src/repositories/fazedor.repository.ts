@@ -68,7 +68,7 @@ export class FazedorRepository {
       data: {
         id_usuario: data.id_usuario,
         tipo_fazedor: data.tipo_fazedor as any,
-        status_aprovacao: (data.status_aprovacao as any) || 'pendente'
+        status_aprovacao: (data.status_aprovacao as any) || 'aprovado'
       },
       include:{
         usuario:true

@@ -860,6 +860,8 @@ export class FashionController {
       const usuarioReacao = (req as AuthRequest).usuarioId ?
         await this.servicoReacaoService.getUserReacao(id, (req as AuthRequest).usuarioId!) : null;
 
+        console.log(reacoes, usuarioReacao);
+        
       res.json({
         success: true,
         data: {

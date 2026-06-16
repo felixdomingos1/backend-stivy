@@ -68,8 +68,8 @@ export class AuthController {
         return;
       }
 
-      const { userId } = req.body as ResendOTPDto;
-      const result = await this.authService.resendVerificationCode(userId);
+      const { email } = req.body as ResendOTPDto;
+      const result = await this.authService.resendVerificationCode(email);
       res.json(result);
     } catch (error) {
       this.handleError(error, res);

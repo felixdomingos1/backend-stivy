@@ -14,13 +14,14 @@ export class EventService {
 
   async createEvento(organizadorId: string, dto: CreateEventoDto): Promise<any> {
     const fazedor = await this.fazedorRepository.findFazedorByUserId(organizadorId);
+
     if (!fazedor) {
-      throw new NotFoundError('Organizador não encontrado');
+      throw new NotFoundError('Organizador não encontrado. Você precisa ser um fazedor para criar eventos.');
     }
 
-    if (fazedor.status_aprovacao !== 'aprovado') {
-      throw new ValidationError('Seu perfil precisa ser aprovado para criar eventos');
-    }
+    // if (fazedor.status_aprovacao !== 'aprovado') {
+    //   throw new ValidationError('Seu perfil precisa ser aprovado para criar eventos');
+    // }
 
     if (dto.data_inicio >= dto.data_fim) {
       throw new ValidationError('Data de início deve ser menor que data de fim');
@@ -31,7 +32,7 @@ export class EventService {
     }
 
     const evento = await this.eventoRepository.create({
-      id_organizador: organizadorId,
+      id_organizador: fazedor.id_fazedor,
       titulo: dto.titulo,
       descricao: dto.descricao,
       local: dto.local,
@@ -80,6 +81,11 @@ export class EventService {
     const evento = await this.eventoRepository.findById(id);
     if (!evento) {
       throw new NotFoundError('Evento não encontrado');
+    }
+
+    const fazedor = await this.fazedorRepository.findFazedorByUserId(organizadorId);
+    if (!fazedor) {
+      throw new NotFoundError('Organizador não encontrado');
     }
 
     if (evento.id_organizador !== organizadorId) {

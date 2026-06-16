@@ -7,7 +7,7 @@ export class StoryRepository {
   constructor() {
     this.prisma = prisma;
   }
-
+  
   async create(data: {
     id_usuario: string;
     midia_url: string;

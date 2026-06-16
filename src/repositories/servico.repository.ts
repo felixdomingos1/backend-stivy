@@ -79,6 +79,7 @@ export class ServicoRepository {
                 id_usuario: true,
                 nome: true,
                 email: true,
+                telefone: true,
                 foto_perfil: true
               }
             }
@@ -139,7 +140,11 @@ export class ServicoRepository {
               }
             }
           }
-        }
+        },
+        servicoReacaos:true,
+        imagens:true,
+        servicoComentarios:true,
+        servicoCompartilhamentos:true
       }
     });
 

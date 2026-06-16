@@ -22,7 +22,7 @@ export const registerValidation = [
 
   body('telefone')
     .optional()
-    .matches(/^[0-9]{10,11}$/)
+    .matches(/^[0-9]{9,11}$/)
     .withMessage('Telefone inválido'),
 
   body('tipo')
@@ -71,10 +71,6 @@ export const passwordResetValidation = [
     .withMessage('Nova senha deve ter no mínimo 6 caracteres')
     .matches(/^(?=.*[A-Za-z])(?=.*\d)/)
     .withMessage('Nova senha deve conter pelo menos uma letra e um número')
-];
-
-export const resendOTPValidation = [
-  body('userId').isUUID().withMessage('ID inválido')
 ];
 
 export const updateProfileValidation = [

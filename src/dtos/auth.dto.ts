@@ -18,7 +18,7 @@ export interface VerifyEmailDto {
 }
 
 export interface ResendOTPDto {
-  userId: string;
+  email: string;
 }
 
 export interface RequestPasswordResetDto {

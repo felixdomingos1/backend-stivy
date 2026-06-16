@@ -75,6 +75,107 @@ export class UserController {
     }
   }
 
+
+  async adicionarFavorito(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const { id_fazedor } = req.params;
+      if (!id_fazedor || typeof id_fazedor != 'string') {
+        res.status(400).json({ error: 'ID do fazedor é obrigatório' });
+        return;
+      }
+
+      await this.userService.addFavorito(req.usuarioId, id_fazedor);
+
+      res.status(201).json({
+        success: true,
+        message: 'Fazedor adicionado aos favoritos'
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async logout(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      res.json({
+        success: true,
+        message: 'Logout realizado com sucesso',
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async removerFavorito(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const { id_fazedor } = req.params;
+      if (!id_fazedor || typeof id_fazedor != 'string') {
+        res.status(400).json({ error: 'ID do fazedor é obrigatório' });
+        return;
+      }
+
+      await this.userService.removeFavorito(req.usuarioId, id_fazedor);
+
+      res.json({
+        success: true,
+        message: 'Fazedor removido dos favoritos'
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async getMeusServicos(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const fazedor = await this.userService.getFazedorByUserId(req.usuarioId);
+
+      if (!fazedor) {
+        res.json({
+          success: true,
+          data: [],
+          message: 'Usuário não é um fazedor'
+        });
+        return;
+      }
+
+      const servicos = await this.userService.getMeusServicos(fazedor.id_fazedor);
+
+      res.json({
+        success: true,
+        data: servicos
+      });
+    } catch (error) {
+      console.error('Erro em getMeusServicos:', error);
+      res.json({
+        success: true,
+        data: [],
+        message: 'Erro ao carregar serviços'
+      });
+    }
+  }
+
+
   async atualizarSenha(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
@@ -166,59 +267,6 @@ export class UserController {
     }
   }
 
-  async adicionarFavorito(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
-        return;
-      }
-
-      if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
-        return;
-      }
-
-      const fazedorId = req.params.usuarioId;
-      if (fazedorId) {
-        res.status(400).json({ error: 'ID do fazedor inválido' });
-        return;
-      }
-
-      await this.userService.addFavorito(req.usuarioId, fazedorId);
-
-      res.status(201).json({
-        success: true,
-        message: 'Fazedor adicionado aos favoritos'
-      });
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  async removerFavorito(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
-        return;
-      }
-      const fazedorId = req.params.id_fazedor;
-      if (fazedorId) {
-        res.status(400).json({ error: 'ID do fazedor inválido' });
-        return;
-      }
-
-      await this.userService.removeFavorito(req.usuarioId, fazedorId);
-
-      res.json({
-        success: true,
-        message: 'Fazedor removido dos favoritos'
-      });
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
 
   async getEstatisticas(req: AuthRequest, res: Response): Promise<void> {
     try {
@@ -237,7 +285,7 @@ export class UserController {
       this.handleError(error, res);
     }
   }
- 
+
   private handleError(error: any, res: Response): void {
     logger.error('Erro na requisição do usuário:', error);
 

@@ -20,10 +20,6 @@ export class FashionService {
       throw new NotFoundError('Fazedor não encontrado');
     }
 
-    if (fazedor.status_aprovacao !== 'aprovado') {
-      throw new ValidationError('Seu perfil precisa ser aprovado para criar serviços');
-    }
-
     const servico = await this.servicoRepository.create({
       id_fazedor: fazedor.id_fazedor,
       titulo: dto.titulo,
