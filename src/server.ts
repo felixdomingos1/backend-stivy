@@ -1,3 +1,4 @@
+// backend/src/server.ts (atualizado)
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -8,6 +9,8 @@ import { connectRedis, isRedisReady, getRedisClient } from './config/redis';
 import app from './app';
 import { EmailService } from './services/email.service';
 import logger from './utils/logger';
+import { configureSocket } from './config/socket';
+import { createServer } from 'http';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
@@ -29,6 +32,14 @@ async function startServer(): Promise<void> {
     logger.warn('⚠️ Email service não está disponível:', error.message);
   });
 
+  // Criar servidor HTTP e configurar Socket.IO
+  const httpServer = createServer(app);
+  const io = configureSocket(httpServer);
+
+  // Disponibilizar io para os controllers/services
+  app.set('io', io);
+
+  // Rota de status do Redis
   if (process.env.NODE_ENV !== 'test') {
     app.get('/redis-status', async (_, res) => {
       try {
@@ -66,10 +77,11 @@ async function startServer(): Promise<void> {
   }
 
   console.log(`🚀 Iniciando servidor na porta ${PORT}...`);
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`
     SERVIDOR STIVY INICIADO COM SUCESSO!
     API: http://localhost:${PORT}/api/v1
+    WebSocket: ws://localhost:${PORT}
     Ambiente: ${process.env.NODE_ENV || 'development'}
     Redis: ${redisConnected ? '✅ CONECTADO' : '❌ DESCONECTADO'}
     Health: http://localhost:${PORT}/api/v1/health

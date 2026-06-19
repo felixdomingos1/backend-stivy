@@ -24,50 +24,40 @@ export class ModeloRepository {
     this.prisma = prisma;
   }
 
-  async create(data: {
-    id_agencia: string;
-    nome_completo: string;
-    nome_artistico?: string;
-    genero?: string;
-    altura?: number;
-    peso?: number;
-    busto?: number;
-    cintura?: number;
-    quadril?: number;
-    sapato?: number;
-    roupa?: number;
-    cabelo?: string;
-    olhos?: string;
-    experiencia?: string;
-    idade?: number;
-    nacionalidade?: string;
-    habilidades?: string;
-    redes_sociais?: any;
-  }): Promise<Modelo> {
-    return await this.prisma.modelo.create({
-      data: {
-        id_agencia: data.id_agencia,
-        nome_completo: data.nome_completo,
-        nome_artistico: data.nome_artistico,
-        genero: data.genero as any,
-        altura: data.altura,
-        peso: data.peso,
-        busto: data.busto,
-        cintura: data.cintura,
-        quadril: data.quadril,
-        sapato: data.sapato,
-        roupa: data.roupa,
-        cabelo: data.cabelo,
-        olhos: data.olhos,
-        experiencia: data.experiencia,
-        idade: data.idade,
-        nacionalidade: data.nacionalidade,
-        habilidades: data.habilidades,
-        redes_sociais: data.redes_sociais
+  async create(data: any): Promise<any> {
+    const mappedData: any = {
+      id_agencia: data.id_agencia,
+      nome_completo: data.nome_completo,
+      nome_artistico: data.nome_artistico || null,
+      genero: data.genero || 'feminino',
+      altura: data.altura ? parseFloat(data.altura) : null,
+      peso: data.peso ? parseFloat(data.peso) : null,
+      busto: data.busto ? parseInt(data.busto) : null,
+      cintura: data.cintura ? parseInt(data.cintura) : null,
+      quadril: data.quadril ? parseInt(data.quadril) : null,
+      sapato: data.sapato ? parseInt(data.sapato) : null,
+      roupa: data.roupa ? parseInt(data.roupa) : null,
+      cabelo: data.cabelo || null,
+      olhos: data.olhos || null,
+      foto_url: data.foto_url || null,
+      foto_public_id: data.foto_public_id || null,
+      status: data.status || 'ativo',
+      experiencia: data.experiencia || null,
+      idade: data.idade ? parseInt(data.idade) : null,
+      nacionalidade: data.nacionalidade || null,
+      habilidades: data.habilidades || null,
+      redes_sociais: data.redes_sociais || null,
+    };
+    Object.keys(mappedData).forEach(key => {
+      if (mappedData[key] === undefined || mappedData[key] === null) {
+        delete mappedData[key];
       }
     });
+    console.log('📦 Prisma create data:', mappedData);
+    return this.prisma.modelo.create({
+      data: mappedData,
+    });
   }
-
   async findById(id_modelo: string): Promise<ModeloWithRelations | null> {
     return await this.prisma.modelo.findUnique({
       where: { id_modelo },

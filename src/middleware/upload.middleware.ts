@@ -7,6 +7,7 @@ const storage = multer.memoryStorage();
 const fileFilter = (_: any, file: any, cb: any) => {
   const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
+  console.log('📁 Arquivo recebido:', file.mimetype);
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
