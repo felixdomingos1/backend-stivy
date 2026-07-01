@@ -1,63 +1,54 @@
-import { format, formatDistance, formatRelative, subDays, addDays, isAfter, isBefore, differenceInDays, differenceInHours, differenceInMinutes } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-
 export class DateUtils {
-  static formatDate(date: Date | string, pattern: string = 'dd/MM/yyyy'): string {
+  static formatDate(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return format(d, pattern, { locale: ptBR });
+    return d.toLocaleDateString('pt-PT');
   }
 
   static formatDateTime(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return format(d, 'dd/MM/yyyy HH:mm:ss', { locale: ptBR });
-  }
-
-  static formatRelative(date: Date | string, baseDate: Date = new Date()): string {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    return formatRelative(d, baseDate, { locale: ptBR });
-  }
-
-  static formatDistance(date: Date | string, baseDate: Date = new Date()): string {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    return formatDistance(d, baseDate, { locale: ptBR, addSuffix: true });
+    return d.toLocaleString('pt-PT');
   }
 
   static isExpired(date: Date | string): boolean {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return isAfter(new Date(), d);
+    return new Date() > d;
   }
 
   static isFuture(date: Date | string): boolean {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return isAfter(d, new Date());
+    return d > new Date();
   }
 
   static daysBetween(start: Date | string, end: Date | string): number {
     const s = typeof start === 'string' ? new Date(start) : start;
     const e = typeof end === 'string' ? new Date(end) : end;
-    return differenceInDays(e, s);
+    return Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
   }
 
   static hoursBetween(start: Date | string, end: Date | string): number {
     const s = typeof start === 'string' ? new Date(start) : start;
     const e = typeof end === 'string' ? new Date(end) : end;
-    return differenceInHours(e, s);
+    return Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60));
   }
 
   static minutesBetween(start: Date | string, end: Date | string): number {
     const s = typeof start === 'string' ? new Date(start) : start;
     const e = typeof end === 'string' ? new Date(end) : end;
-    return differenceInMinutes(e, s);
+    return Math.round((e.getTime() - s.getTime()) / (1000 * 60));
   }
 
   static addDays(date: Date | string, days: number): Date {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return addDays(d, days);
+    const result = new Date(d);
+    result.setDate(result.getDate() + days);
+    return result;
   }
 
   static subDays(date: Date | string, days: number): Date {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return subDays(d, days);
+    const result = new Date(d);
+    result.setDate(result.getDate() - days);
+    return result;
   }
 
   static startOfDay(date: Date | string): Date {
@@ -81,9 +72,9 @@ export class DateUtils {
   static isThisWeek(date: Date | string): boolean {
     const d = typeof date === 'string' ? new Date(date) : date;
     const today = new Date();
-    const weekStart = subDays(today, today.getDay());
-    const weekEnd = addDays(weekStart, 7);
-    return isAfter(d, weekStart) && isBefore(d, weekEnd);
+    const weekStart = DateUtils.subDays(today, today.getDay());
+    const weekEnd = DateUtils.addDays(weekStart, 7);
+    return d > weekStart && d < weekEnd;
   }
 
   static isThisMonth(date: Date | string): boolean {
@@ -115,6 +106,24 @@ export class DateUtils {
   static isValid(date: any): boolean {
     const d = new Date(date);
     return d instanceof Date && !isNaN(d.getTime());
+  }
+
+  static formatRelative(date: Date | string): string {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (seconds < 60) return 'agora';
+    if (minutes < 60) return `há ${minutes} min`;
+    if (hours < 24) return `há ${hours} h`;
+    if (days < 7) return `há ${days} dias`;
+    if (days < 30) return `há ${Math.floor(days / 7)} semanas`;
+    if (days < 365) return `há ${Math.floor(days / 30)} meses`;
+    return `há ${Math.floor(days / 365)} anos`;
   }
 }
 

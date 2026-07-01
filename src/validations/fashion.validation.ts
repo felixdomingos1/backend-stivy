@@ -156,7 +156,7 @@ export const getFazedorByIdValidation = [
 
 export const createAvaliacaoValidation = [
   body('id_fazedor')
-    .isUUID()
+    .notEmpty()
     .withMessage('ID do fazedor inválido'),
 
   body('nota')
@@ -171,6 +171,29 @@ export const createAvaliacaoValidation = [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Comentário deve ter no máximo 500 caracteres')
+];
+
+export const searchValidation = [
+  query('q')
+    .optional()
+    .trim()
+    .isString()
+    .withMessage('Termo de pesquisa inválido'),
+
+  query('tipo')
+    .optional()
+    .isIn(['servicos', 'fazedores', 'eventos', 'todos'])
+    .withMessage('Tipo de pesquisa inválido'),
+
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .toInt(),
+
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .toInt()
 ];
 
 export const listAvaliacoesValidation = [

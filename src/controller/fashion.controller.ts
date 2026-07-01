@@ -281,6 +281,8 @@ export class FashionController {
       const usuarioId = Array.isArray(req.usuarioId) ? req.usuarioId[0] : req.usuarioId;
       const { nota, comentario, id_fazedor } = req.body;
 
+      logger.info('Request body:', req.body);
+      
       const result = await this.fashionService.avaliarFazedor(
         usuarioId,
         id_fazedor,
@@ -860,8 +862,8 @@ export class FashionController {
       const usuarioReacao = (req as AuthRequest).usuarioId ?
         await this.servicoReacaoService.getUserReacao(id, (req as AuthRequest).usuarioId!) : null;
 
-        console.log(reacoes, usuarioReacao);
-        
+        logger.info('Reações:', { reacoes, usuarioReacao });
+
       res.json({
         success: true,
         data: {
@@ -892,6 +894,29 @@ export class FashionController {
       });
 
       res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async search(req: Request, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      const { q, tipo = 'todos', page = 1, limit = 20 } = req.query;
+
+      const result = await this.fashionService.search(
+        q as string,
+        tipo as string,
+        Number(page),
+        Number(limit)
+      );
+
+      res.json({ success: true, ...result });
     } catch (error) {
       this.handleError(error, res);
     }

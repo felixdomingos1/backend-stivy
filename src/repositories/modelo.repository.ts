@@ -1,5 +1,6 @@
 import { PrismaClient, Modelo, ModeloPortfolio, Prisma } from '@prisma/client';
 import prisma from '../config/database';
+import logger from '../utils/logger';
 
 type ModeloWithRelations = Prisma.ModeloGetPayload<{
   include: {
@@ -53,7 +54,7 @@ export class ModeloRepository {
         delete mappedData[key];
       }
     });
-    console.log('📦 Prisma create data:', mappedData);
+    logger.info('📦 Prisma create data:', mappedData);
     return this.prisma.modelo.create({
       data: mappedData,
     });

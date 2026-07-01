@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { cacheService } from '../config/redis';
+import logger from '../utils/logger';
 
 export interface CacheOptions {
   duration?: number;
@@ -36,18 +37,18 @@ export const cacheResponse = (options: CacheOptions = {}) => {
         return;
       }
 
-      const originalJson = res.json;
-      res.json = function (body: any): any {
+      const originalJson = res.json.bind(res);
+      (res as any).json = function (body: any): any {
         if (body && (body.success !== false)) {
-          cacheService.set(key, body, duration).catch(console.error);
+          cacheService.set(key, body, duration).catch(err => logger.error('Cache set error:', err));
         }
         res.setHeader('X-Cache', 'MISS');
-        return originalJson.call(this, body);
+        return originalJson(body);
       };
 
       next();
     } catch (error) {
-      console.error('Cache error:', error);
+      logger.error('Cache error:', error);
       next();
     }
   };
@@ -69,14 +70,14 @@ export const invalidateOnWrite = (patterns: string[]) => {
   return async (_: Request, res: Response, next: NextFunction) => {
     const originalJson = res.json;
 
-    res.json = async function (body: any): Promise<any> {
-      if (body && body.success !== false) {
-        for (const pattern of patterns) {
-          await invalidateCache(pattern).catch(console.error);
+      (res as any).json = async function (body: any): Promise<any> {
+        if (body && body.success !== false) {
+          for (const pattern of patterns) {
+            await invalidateCache(pattern).catch(err => logger.error('Cache invalidate error:', err));
+          }
         }
-      }
-      return originalJson.call(this, body);
-    };
+        return originalJson(body);
+      };
 
     next();
   };

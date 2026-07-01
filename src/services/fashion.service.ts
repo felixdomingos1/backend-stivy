@@ -4,6 +4,7 @@ import { AvaliacaoRepository } from '../repositories/avaliacao.repository';
 import { CreateServicoDto, UpdateServicoDto } from '../dtos/fashion.dto';
 import { ValidationError, NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
+import prisma from '../config/database';
 
 export class FashionService {
   constructor(
@@ -13,7 +14,7 @@ export class FashionService {
   ) { }
 
   async createServico(fazedorId: string, dto: CreateServicoDto): Promise<any> {
-    console.log(fazedorId, dto);
+    logger.info('Criando serviço:', { fazedorId, dto });
 
     const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorId);
     if (!fazedor) {
@@ -215,5 +216,140 @@ export class FashionService {
 
   async getTiposFazedores(): Promise<string[]> {
     return ['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer'];
+  }
+
+  async search(
+    query: string,
+    tipo: string = 'todos',
+    page: number = 1,
+    limit: number = 20
+  ): Promise<any> {
+    const skip = (page - 1) * limit;
+    const result: any = {};
+
+    if (!query || !query.trim()) {
+      throw new ValidationError('Termo de pesquisa é obrigatório');
+    }
+
+    const searchTerm = query.trim();
+
+    if (tipo === 'servicos' || tipo === 'todos') {
+      const whereServicos: any = {
+        OR: [
+          { titulo: { contains: searchTerm } },
+          { descricao: { contains: searchTerm } },
+          { categoria: { contains: searchTerm } },
+        ],
+      };
+
+      const [servicos, totalServicos] = await Promise.all([
+        prisma.servico.findMany({
+          where: whereServicos,
+          skip: tipo === 'servicos' ? skip : 0,
+          take: tipo === 'servicos' ? limit : 5,
+          include: {
+            fazedor: {
+              include: {
+                usuario: {
+                  select: { nome: true, foto_perfil: true },
+                },
+              },
+            },
+            imagens: {
+              where: { is_principal: true },
+              take: 1,
+            },
+          },
+          orderBy: { data_criacao: 'desc' },
+        }),
+        prisma.servico.count({ where: whereServicos }),
+      ]);
+
+      result.servicos = { data: servicos, total: totalServicos };
+    }
+
+    if (tipo === 'fazedores' || tipo === 'todos') {
+      const whereFazedores: any = {
+        OR: [
+          { usuario: { nome: { contains: searchTerm } } },
+          { biografia: { contains: searchTerm } },
+          { tipo_fazedor: { contains: searchTerm } as any },
+        ],
+      };
+
+      const [fazedores, totalFazedores] = await Promise.all([
+        prisma.fazedor.findMany({
+          where: whereFazedores,
+          skip: tipo === 'fazedores' ? skip : 0,
+          take: tipo === 'fazedores' ? limit : 5,
+          include: {
+            usuario: {
+              select: {
+                id_usuario: true,
+                nome: true,
+                email: true,
+                foto_perfil: true,
+              },
+            },
+            agencia: { select: { nome_agencia: true } },
+            modeloFreelancer: { select: { nome_artistico: true } },
+          },
+          orderBy: { avaliacao_media: 'desc' },
+        }),
+        prisma.fazedor.count({ where: whereFazedores }),
+      ]);
+
+      result.fazedores = { data: fazedores, total: totalFazedores };
+    }
+
+    if (tipo === 'eventos' || tipo === 'todos') {
+      const whereEventos: any = {
+        OR: [
+          { titulo: { contains: searchTerm } },
+          { descricao: { contains: searchTerm } },
+          { local: { contains: searchTerm } },
+        ],
+      };
+
+      const [eventos, totalEventos] = await Promise.all([
+        prisma.evento.findMany({
+          where: whereEventos,
+          skip: tipo === 'eventos' ? skip : 0,
+          take: tipo === 'eventos' ? limit : 5,
+          include: {
+            organizador: {
+              include: {
+                usuario: {
+                  select: { nome: true, foto_perfil: true },
+                },
+              },
+            },
+          },
+          orderBy: { data_inicio: 'desc' },
+        }),
+        prisma.evento.count({ where: whereEventos }),
+      ]);
+
+      result.eventos = { data: eventos, total: totalEventos };
+    }
+
+    if (tipo !== 'todos') {
+      const dataKey = tipo + 's';
+      const items = result[dataKey]?.data || [];
+      const total = result[dataKey]?.total || 0;
+      return {
+        data: items,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    }
+
+    return {
+      ...result,
+      page,
+      limit,
+    };
   }
 }

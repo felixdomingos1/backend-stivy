@@ -94,7 +94,7 @@ export class AdminController {
         data: updated
       });
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       res.status(500).json({ error: 'Erro ao aprovar fazedor' });
     }
   }
@@ -144,7 +144,7 @@ export class AdminController {
         data: updated
       });
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       res.status(500).json({ error: 'Erro ao rejeitar fazedor' });
     }
   }

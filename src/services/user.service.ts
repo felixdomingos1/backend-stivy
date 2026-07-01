@@ -1,6 +1,7 @@
 // backend/src/services/user.service.ts
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
+import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { UpdateUserDto, UpdatePasswordDto } from '../dtos/user.dto';
 import { compararSenha, hashSenha } from '../utils/bcrypt';
 import { ValidationError, AuthenticationError, NotFoundError } from '../utils/errors';
@@ -8,10 +9,14 @@ import logger from '../utils/logger';
 import prisma from '../config/database'; // ✅ Importar diretamente
 
 export class UserService {
+  private notificacaoRepository: NotificacaoRepository;
+
   constructor(
     private userRepository: UserRepository,
     private fazedorRepository: FazedorRepository
-  ) { }
+  ) {
+    this.notificacaoRepository = new NotificacaoRepository();
+  }
 
   async pegarTodos(): Promise<any[]> {
     const users = await this.userRepository.findAll();
@@ -104,7 +109,7 @@ export class UserService {
       });
       return servicos;
     } catch (error) {
-      console.error('Erro ao buscar serviços:', error);
+      logger.error('Erro ao buscar serviços:', error);
       return [];
     }
   }
@@ -244,5 +249,62 @@ export class UserService {
     }
 
     return estatisticas;
+  }
+
+  async followUser(seguidorId: string, seguidoId: string): Promise<void> {
+    if (seguidorId === seguidoId) {
+      throw new ValidationError('Não podes seguir a ti mesmo');
+    }
+
+    const seguido = await this.userRepository.findById(seguidoId);
+    if (!seguido) {
+      throw new NotFoundError('Usuário não encontrado');
+    }
+
+    const isFollowing = await this.userRepository.isFollowing(seguidorId, seguidoId);
+    if (isFollowing) {
+      throw new ValidationError('Já segues este usuário');
+    }
+
+    await this.userRepository.followUser(seguidorId, seguidoId);
+
+    const seguidor = await this.userRepository.findById(seguidorId);
+    if (seguidor) {
+      await this.notificacaoRepository.create({
+        id_usuario: seguidoId,
+        titulo: 'Novo seguidor',
+        mensagem: `${seguidor.nome} começou a seguir-te`,
+        tipo: 'sistema',
+        link: `/perfil/${seguidorId}`,
+      });
+    }
+
+    logger.info(`Usuário ${seguidorId} seguiu ${seguidoId}`);
+  }
+
+  async unfollowUser(seguidorId: string, seguidoId: string): Promise<void> {
+    const isFollowing = await this.userRepository.isFollowing(seguidorId, seguidoId);
+    if (!isFollowing) {
+      throw new ValidationError('Não segues este usuário');
+    }
+
+    await this.userRepository.unfollowUser(seguidorId, seguidoId);
+    logger.info(`Usuário ${seguidorId} deixou de seguir ${seguidoId}`);
+  }
+
+  async getMySeguidores(userId: string): Promise<any[]> {
+    return this.userRepository.getSeguidores(userId);
+  }
+
+  async getMySeguindo(userId: string): Promise<any[]> {
+    return this.userRepository.getSeguindo(userId);
+  }
+
+  async getUserSeguidores(userId: string): Promise<any[]> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundError('Usuário não encontrado');
+    }
+    return this.userRepository.getSeguidores(userId);
   }
 }

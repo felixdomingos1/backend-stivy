@@ -1,4 +1,5 @@
 import { createClient } from 'redis';
+import logger from '../utils/logger';
 
 let redisClient: ReturnType<typeof createClient> | null = null;
 let isConnected = false;
@@ -6,25 +7,25 @@ let connectionPromise: Promise<void> | null = null;
 
 export const connectRedis = async (): Promise<boolean> => {
   if (isConnected && redisClient?.isReady) {
-    console.log('[REDIS] ✅ Já conectado');
+    logger.info('[REDIS] ✅ Já conectado');
     return true;
   }
 
   if (connectionPromise) {
-    console.log('[REDIS] ⏳ Aguardando conexão existente...');
+    logger.info('[REDIS] ⏳ Aguardando conexão existente...');
     await connectionPromise;
     return isConnected;
   }
 
-  console.log('[REDIS] 🔄 Iniciando nova conexão...');
-  console.log(`[REDIS] 📡 Host: ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`);
+  logger.info('[REDIS] 🔄 Iniciando nova conexão...');
+  logger.info(`[REDIS] 📡 Host: ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`);
 
   redisClient = createClient({
     socket: {
       host: process.env.REDIS_HOST || 'localhost',
       port: parseInt(process.env.REDIS_PORT || '6379'),
       reconnectStrategy: (retries) => {
-        console.log(`[REDIS] 🔄 Tentativa de reconexão: ${retries}`);
+        logger.warn(`[REDIS] 🔄 Tentativa de reconexão: ${retries}`);
         if (retries > 10) {
           return new Error('Max reconnection attempts reached');
         }
@@ -35,21 +36,21 @@ export const connectRedis = async (): Promise<boolean> => {
   });
 
   redisClient.on('connect', () => {
-    console.log('[REDIS] 📡 Cliente conectado ao servidor');
+    logger.info('[REDIS] 📡 Cliente conectado ao servidor');
   });
 
   redisClient.on('ready', () => {
-    console.log('[REDIS] ✅ Redis pronto para uso!');
+    logger.info('[REDIS] ✅ Redis pronto para uso!');
     isConnected = true;
   });
 
   redisClient.on('error', (err) => {
-    console.error(`[REDIS] ❌ Erro: ${err.message}`);
+    logger.error(`[REDIS] ❌ Erro: ${err.message}`);
     isConnected = false;
   });
 
   redisClient.on('end', () => {
-    console.log('[REDIS] 🔌 Conexão encerrada');
+    logger.info('[REDIS] 🔌 Conexão encerrada');
     isConnected = false;
   });
 
@@ -61,13 +62,13 @@ export const connectRedis = async (): Promise<boolean> => {
       const test = await redisClient!.get('test:connection');
 
       if (test === 'ok') {
-        console.log('[REDIS] ✅ Teste de conexão bem sucedido!');
+        logger.info('[REDIS] ✅ Teste de conexão bem sucedido!');
         isConnected = true;
       } else {
         throw new Error('Teste de conexão falhou');
       }
     } catch (error: any) {
-      console.error(`[REDIS] ❌ Falha na conexão: ${error.message}`);
+      logger.error(`[REDIS] ❌ Falha na conexão: ${error.message}`);
       isConnected = false;
       throw error;
     } finally {
@@ -95,7 +96,7 @@ export const disconnectRedis = async (): Promise<void> => {
     await redisClient.quit();
     redisClient = null;
     isConnected = false;
-    console.log('[REDIS] 👋 Desconectado');
+    logger.info('[REDIS] 👋 Desconectado');
   }
 };
 
@@ -109,7 +110,7 @@ export class RateLimiter {
     current: number;
   }> {
     if (!isRedisReady()) {
-      console.warn(`[RATE-LIMIT] Redis não pronto, permitindo requisição para ${key}`);
+      logger.warn(`[RATE-LIMIT] Redis não pronto, permitindo requisição para ${key}`);
       return {
         allowed: true,
         remaining: maxRequests,
@@ -139,11 +140,11 @@ export class RateLimiter {
         ? Math.floor(oldest[0].score) + windowSeconds
         : now + windowSeconds;
 
-      console.log(`[RATE-LIMIT] ${key}: ${current}/${maxRequests} (remaining: ${remaining})`);
+      logger.info(`[RATE-LIMIT] ${key}: ${current}/${maxRequests} (remaining: ${remaining})`);
 
       return { allowed, remaining, resetAt, current };
     } catch (error) {
-      console.error(`[RATE-LIMIT] Erro ao verificar limite para ${key}:`, error);
+      logger.error(`[RATE-LIMIT] Erro ao verificar limite para ${key}:`, error);
       return {
         allowed: true,
         remaining: maxRequests,
@@ -160,9 +161,9 @@ export class RateLimiter {
       const client = getRedisClient();
       const fullKey = `${this.prefix}${key}`;
       await client.del(fullKey);
-      console.log(`[RATE-LIMIT] Resetado para ${key}`);
+      logger.info(`[RATE-LIMIT] Resetado para ${key}`);
     } catch (error) {
-      console.error(`[RATE-LIMIT] Erro ao resetar ${key}:`, error);
+      logger.error(`[RATE-LIMIT] Erro ao resetar ${key}:`, error);
     }
   }
 
@@ -186,10 +187,10 @@ export class CacheService {
     try {
       const client = getRedisClient();
       await client.setEx(key, ttl, JSON.stringify(value));
-      console.log(`[CACHE] SET ${key} (TTL: ${ttl}s)`);
+      logger.info(`[CACHE] SET ${key} (TTL: ${ttl}s)`);
       return true;
     } catch (error) {
-      console.error(`[CACHE] Erro ao setar ${key}:`, error);
+      logger.error(`[CACHE] Erro ao setar ${key}:`, error);
       return false;
     }
   }
@@ -201,13 +202,13 @@ export class CacheService {
       const client = getRedisClient();
       const data = await client.get(key);
       if (!data) {
-        console.log(`[CACHE] MISS ${key}`);
+        logger.info(`[CACHE] MISS ${key}`);
         return null;
       }
-      console.log(`[CACHE] HIT ${key}`);
+      logger.info(`[CACHE] HIT ${key}`);
       return JSON.parse(data) as T;
     } catch (error) {
-      console.error(`[CACHE] Erro ao obter ${key}:`, error);
+      logger.error(`[CACHE] Erro ao obter ${key}:`, error);
       return null;
     }
   }
@@ -218,7 +219,7 @@ export class CacheService {
     try {
       const client = getRedisClient();
       await client.del(key);
-      console.log(`[CACHE] DEL ${key}`);
+      logger.info(`[CACHE] DEL ${key}`);
       return true;
     } catch (error) {
       return false;
@@ -233,10 +234,10 @@ export class CacheService {
       const keys = await client.keys(pattern);
       if (keys.length > 0) {
         await client.del(keys);
-        console.log(`[CACHE] DEL pattern ${pattern} (${keys.length} keys)`);
+        logger.info(`[CACHE] DEL pattern ${pattern} (${keys.length} keys)`);
       }
     } catch (error) {
-      console.error(`[CACHE] Erro ao deletar pattern ${pattern}:`, error);
+      logger.error(`[CACHE] Erro ao deletar pattern ${pattern}:`, error);
     }
   }
 
@@ -246,9 +247,9 @@ export class CacheService {
     try {
       const client = getRedisClient();
       await client.flushAll();
-      console.log('[CACHE] FLUSHALL executado');
+      logger.info('[CACHE] FLUSHALL executado');
     } catch (error) {
-      console.error('[CACHE] Erro ao executar flushall:', error);
+      logger.error('[CACHE] Erro ao executar flushall:', error);
     }
   }
 }

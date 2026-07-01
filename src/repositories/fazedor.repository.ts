@@ -144,6 +144,7 @@ export class FazedorRepository {
         agencia: {
           include: { modelos: true }
         },
+        avaliacoesRecebidas:true,
         modeloFreelancer: true,
         estilista: true,
         maquiador: true,
@@ -160,11 +161,11 @@ export class FazedorRepository {
       where.tipo_fazedor = filters.tipo_fazedor;
     }
 
-    if (filters?.status_aprovacao) {
-      where.status_aprovacao = filters.status_aprovacao;
-    } else {
-      where.status_aprovacao = 'aprovado';
-    }
+    // if (filters?.status_aprovacao) {
+    //   where.status_aprovacao = filters.status_aprovacao;
+    // } else {
+    //   where.status_aprovacao = 'aprovado';
+    // }
 
     if (filters?.avaliacao_minima !== undefined) {
       where.avaliacao_media = {
@@ -403,7 +404,7 @@ export class FazedorRepository {
     });
   }
 
-  async rejeitarFazedor(id: string, motivo?: string): Promise<any> {
+  async rejeitarFazedor(id: string, _motivo?: string): Promise<any> {
     return await this.prisma.fazedor.update({
       where: { id_fazedor: id },
       data: {
@@ -422,7 +423,7 @@ export class FazedorRepository {
     });
   }
 
-  async findByProximidade(latitude: number, longitude: number, raioKm: number = 10): Promise<any[]> {
+  async findByProximidade(_latitude: number, _longitude: number, _raioKm: number = 10): Promise<any[]> {
     return await this.prisma.fazedor.findMany({
       where: {
         status_aprovacao: 'aprovado',

@@ -80,6 +80,31 @@ export function configureSocket(httpServer: HttpServer): SocketServer {
       socket.leave(`chat:${chatId}`);
       logger.debug(`Usuário ${userId} saiu do chat ${chatId}`);
     });
+    socket.on('chat:join', (conversaId: string) => {
+      socket.join(`chat:${conversaId}`);
+      logger.debug(`Usuário ${userId} entrou na conversa ${conversaId}`);
+    });
+
+    socket.on('chat:leave', (conversaId: string) => {
+      socket.leave(`chat:${conversaId}`);
+      logger.debug(`Usuário ${userId} saiu da conversa ${conversaId}`);
+    });
+
+    socket.on('chat:typing', (data: { id_conversa: string; nome_usuario: string }) => {
+      socket.to(`chat:${data.id_conversa}`).emit('chat:typing', {
+        id_conversa: data.id_conversa,
+        id_usuario: userId,
+        nome_usuario: data.nome_usuario,
+      });
+    });
+
+    socket.on('chat:stopTyping', (data: { id_conversa: string }) => {
+      socket.to(`chat:${data.id_conversa}`).emit('chat:stopTyping', {
+        id_conversa: data.id_conversa,
+        id_usuario: userId,
+      });
+    });
+
     socket.on('ping', () => {
       socket.emit('pong');
     });

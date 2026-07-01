@@ -9,13 +9,20 @@ import {
   listFazedoresValidation,
   getFazedorByIdValidation,
   createAvaliacaoValidation,
-  listAvaliacoesValidation
+  listAvaliacoesValidation,
+  searchValidation
 } from '../validations/fashion.validation';
 import { FashionController } from '../controller/fashion.controller';
 import { handleUploadError, uploadMultiple, uploadSingle } from '../middleware/upload.middleware';
 
 const router = Router();
 const fashionController = new FashionController();
+
+router.get('/pesquisa',
+  searchValidation,
+  validate,
+  fashionController.search.bind(fashionController)
+);
 
 router.get('/servicos',
   listServicosValidation,

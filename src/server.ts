@@ -67,7 +67,7 @@ async function startServer(): Promise<void> {
           timestamp: new Date().toISOString()
         });
       } catch (error: any) {
-        console.error('Erro na rota /redis-status:', error);
+        logger.error('Erro na rota /redis-status:', error);
         res.status(500).json({
           connected: false,
           error: error.message
@@ -91,7 +91,7 @@ async function startServer(): Promise<void> {
 
 if (process.env.NODE_ENV !== 'test') {
   startServer().catch((error) => {
-    console.error('❌ Erro fatal ao iniciar servidor:', error);
+    logger.error('❌ Erro fatal ao iniciar servidor:', error);
     process.exit(1);
   });
 }

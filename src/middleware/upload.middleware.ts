@@ -1,13 +1,14 @@
 import multer from 'multer';
 import { Request, Response, NextFunction } from 'express';
 import { cloudinaryService } from '../services/cloudinary.service';
+import logger from '../utils/logger';
 
 const storage = multer.memoryStorage();
 
 const fileFilter = (_: any, file: any, cb: any) => {
   const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
-  console.log('📁 Arquivo recebido:', file.mimetype);
+  logger.info('📁 Arquivo recebido:', file.mimetype);
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {

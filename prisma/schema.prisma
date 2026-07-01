@@ -123,7 +123,15 @@ model Usuario {
   servicoComentarioReacaos ServicoComentarioReacao[]
   servicoReacaos           ServicoReacao[]
   servicoCompartilhamentos ServicoCompartilhamento[]
+  refreshTokens            RefreshToken[]
+  seguidores               Seguidor[]                 @relation("Seguidores")
+  seguindo                 Seguidor[]                 @relation("Seguindo")
+  conversaParticipantes    ConversaParticipante[]
+  mensagens                Mensagem[]
+  deviceTokens             DeviceToken[]
 
+  @@index([email])
+  @@index([tipo])
   @@map("USUARIO")
 }
 
@@ -158,6 +166,9 @@ model Fazedor {
   favoritadoPor       Favorito[]
   avaliacoesRecebidas Avaliacao[] @relation("AvaliacoesRecebidas")
 
+  @@index([tipo_fazedor])
+  @@index([status_aprovacao])
+  @@index([avaliacao_media])
   @@map("FAZEDOR")
 }
 
@@ -175,6 +186,7 @@ model Portfolio {
 
   fazedor Fazedor @relation(fields: [id_fazedor], references: [id_fazedor], onDelete: Cascade)
 
+  @@index([id_fazedor, ordem])
   @@map("PORTFOLIO")
 }
 
@@ -338,6 +350,10 @@ model Servico {
   servicoReacaos           ServicoReacao[]
   servicoCompartilhamentos ServicoCompartilhamento[]
 
+  @@index([categoria])
+  @@index([id_fazedor])
+  @@index([status])
+  @@index([data_criacao])
   @@map("SERVICO")
 }
 
@@ -370,6 +386,10 @@ model Evento {
   organizador   Fazedor              @relation("EventoOrganizador", fields: [id_organizador], references: [id_fazedor], onDelete: Cascade)
   participantes EventoParticipante[]
 
+  @@index([data_inicio])
+  @@index([tipo_evento])
+  @@index([status])
+  @@index([id_organizador])
   @@map("EVENTO")
 }
 
@@ -465,6 +485,8 @@ model Requisicao {
   servico     Servico? @relation(fields: [id_servico], references: [id_servico], onDelete: SetNull)
   modelo      Modelo?  @relation(fields: [id_modelo], references: [id_modelo], onDelete: SetNull)
 
+  @@index([id_solicitante])
+  @@index([status])
   @@map("REQUISICAO")
 }
 
@@ -481,7 +503,39 @@ model Notificacao {
 
   usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
+  @@index([id_usuario, lida])
+  @@index([data_envio])
   @@map("NOTIFICACAO")
+}
+
+model RefreshToken {
+  id           String   @id @default(uuid()) @db.Char(36)
+  id_usuario   String   @db.Char(36)
+  token        String   @unique @db.VarChar(500)
+  expires_at   DateTime
+  created_at   DateTime @default(now())
+  revoked      Boolean  @default(false)
+
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@index([id_usuario])
+  @@index([token])
+  @@map("REFRESH_TOKEN")
+}
+
+model Seguidor {
+  id_seguidor         String   @id @default(uuid()) @db.Char(36)
+  id_seguidor_usuario String   @db.Char(36)
+  id_seguido          String   @db.Char(36)
+  data_inicio         DateTime @default(now())
+
+  seguidor Usuario @relation("Seguidores", fields: [id_seguidor_usuario], references: [id_usuario], onDelete: Cascade)
+  seguido  Usuario @relation("Seguindo", fields: [id_seguido], references: [id_usuario], onDelete: Cascade)
+
+  @@unique([id_seguidor_usuario, id_seguido])
+  @@index([id_seguido])
+  @@index([id_seguidor_usuario])
+  @@map("SEGUIDOR")
 }
 
 model Favorito {
@@ -611,6 +665,21 @@ model ServicoCompartilhamento {
   @@map("SERVICO_COMPARTILHAMENTO")
 }
 
+model DeviceToken {
+  id           String   @id @default(uuid()) @db.Char(36)
+  id_usuario   String   @db.Char(36)
+  token        String   @db.VarChar(500)
+  plataforma   String   @db.VarChar(20)
+  criado_em    DateTime @default(now())
+  atualizado_em DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@unique([id_usuario, token])
+  @@index([id_usuario])
+  @@map("DEVICE_TOKEN")
+}
+
 model ModeloPortfolio {
   id_modelo_portfolio String @id @default(uuid()) @db.Char(36)
   id_modelo           String @db.Char(36)
@@ -627,4 +696,55 @@ model ModeloPortfolio {
   modelo Modelo @relation(fields: [id_modelo], references: [id_modelo], onDelete: Cascade)
 
   @@map("MODELO_PORTFOLIO")
+}
+
+enum ConversaTipo {
+  direct
+  grupo
+}
+
+model Conversa {
+  id_conversa  String        @id @default(uuid()) @db.Char(36)
+  tipo         ConversaTipo  @default(direct)
+  titulo       String?       @db.VarChar(100)
+  criada_em    DateTime      @default(now())
+  atualizada_em DateTime    @updatedAt
+
+  participantes ConversaParticipante[]
+  mensagens     Mensagem[]
+
+  @@index([atualizada_em])
+  @@map("CONVERSA")
+}
+
+model ConversaParticipante {
+  id_participante String   @id @default(uuid()) @db.Char(36)
+  id_conversa     String   @db.Char(36)
+  id_usuario      String   @db.Char(36)
+  ultima_leitura  DateTime?
+  joined_em       DateTime @default(now())
+
+  conversa Conversa @relation(fields: [id_conversa], references: [id_conversa], onDelete: Cascade)
+  usuario  Usuario  @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@unique([id_conversa, id_usuario])
+  @@index([id_usuario])
+  @@map("CONVERSA_PARTICIPANTE")
+}
+
+model Mensagem {
+  id_mensagem  String   @id @default(uuid()) @db.Char(36)
+  id_conversa  String   @db.Char(36)
+  id_remetente String   @db.Char(36)
+  conteudo     String   @db.Text
+  tipo         String   @default("texto") @db.VarChar(20)
+  lida         Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  conversa  Conversa @relation(fields: [id_conversa], references: [id_conversa], onDelete: Cascade)
+  remetente Usuario  @relation(fields: [id_remetente], references: [id_usuario], onDelete: Cascade)
+
+  @@index([id_conversa, created_at])
+  @@map("MENSAGEM")
 }

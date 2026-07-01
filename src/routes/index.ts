@@ -7,6 +7,8 @@ import requestRoutes from './request.routes';
 import notificationRoutes from './notification.routes';
 import storyRoutes from './story.routes';
 import adminRoutes from './admin.routes';
+import chatRoutes from './chat.routes';
+import deviceRoutes from './device.routes';
 
 const router = Router();
 
@@ -18,6 +20,8 @@ router.use('/requests', requestRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/admin', adminRoutes);
 router.use('/stories', storyRoutes);
+router.use('/chat', chatRoutes);
+router.use('/devices', deviceRoutes);
 
 router.get('/health', (_, res) => {
   res.json({

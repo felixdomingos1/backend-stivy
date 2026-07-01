@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { validationResult } from 'express-validator';
 import { RequisicaoRepository } from '../repositories/requisicao.repository';

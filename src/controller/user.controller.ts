@@ -36,7 +36,7 @@ export class UserController {
     }
   }
 
-  async pegarTodos(req: AuthRequest, res: Response): Promise<void> {
+  async pegarTodos(_req: AuthRequest, res: Response): Promise<void> {
     try {
       const users = await this.userService.pegarTodos();
       res.json({
@@ -106,7 +106,7 @@ export class UserController {
     }
   }
 
-  async logout(req: AuthRequest, res: Response): Promise<void> {
+  async logout(_req: AuthRequest, res: Response): Promise<void> {
     try {
       res.json({
         success: true,
@@ -166,7 +166,7 @@ export class UserController {
         data: servicos
       });
     } catch (error) {
-      console.error('Erro em getMeusServicos:', error);
+      logger.error('Erro em getMeusServicos:', error);
       res.json({
         success: true,
         data: [],
@@ -267,6 +267,112 @@ export class UserController {
     }
   }
 
+
+  async seguirUsuario(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        return;
+      }
+
+      await this.userService.followUser(req.usuarioId, id as string);
+
+      res.json({
+        success: true,
+        message: 'Agora segues este usuário',
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async deixarSeguirUsuario(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        return;
+      }
+
+      await this.userService.unfollowUser(req.usuarioId, id as string);
+
+      res.json({
+        success: true,
+        message: 'Deixaste de seguir este usuário',
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async getMeusSeguidores(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const seguidores = await this.userService.getMySeguidores(req.usuarioId);
+
+      res.json({
+        success: true,
+        count: seguidores.length,
+        data: seguidores,
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async getQuemSigo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const seguindo = await this.userService.getMySeguindo(req.usuarioId);
+
+      res.json({
+        success: true,
+        count: seguindo.length,
+        data: seguindo,
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async getUserSeguidores(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        return;
+      }
+
+      const seguidores = await this.userService.getUserSeguidores(id as string);
+
+      res.json({
+        success: true,
+        count: seguidores.length,
+        data: seguidores,
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
 
   async getEstatisticas(req: AuthRequest, res: Response): Promise<void> {
     try {

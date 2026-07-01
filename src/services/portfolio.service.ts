@@ -79,7 +79,7 @@ export class PortfolioService {
 
   async atualizarImagem(
     id_portfolio: string,
-    id_fazedor: string,
+    _id_fazedor: string,
     titulo?: string,
     descricao?: string
   ): Promise<any> {

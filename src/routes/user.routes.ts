@@ -29,5 +29,12 @@ router.get('/estatisticas', userController.getEstatisticas.bind(userController))
 
 router.get('/meus-servicos', userController.getMeusServicos.bind(userController));
 
+router.post('/seguir/:id', userController.seguirUsuario.bind(userController));
+router.delete('/seguir/:id', userController.deixarSeguirUsuario.bind(userController));
+router.get('/seguidores', userController.getMeusSeguidores.bind(userController));
+router.get('/seguindo', userController.getQuemSigo.bind(userController));
+
+router.get('/:id/seguidores', userController.getUserSeguidores.bind(userController));
+
 router.post('/logout', userController.logout.bind(userController));
 export default router;

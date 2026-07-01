@@ -1,9 +1,9 @@
 import { IAuthService } from '../interfaces/IAuthService';
-import { RegisterUserDto, LoginDto, AuthResponseDto, VerifyEmailDto, RequestPasswordResetDto, VerifyPasswordResetOtpDto, ResetPasswordWithOtpDto } from '../dtos/auth.dto';
+import { RegisterUserDto, LoginDto, AuthResponseDto, VerifyEmailDto, VerifyPasswordResetOtpDto, ResetPasswordWithOtpDto } from '../dtos/auth.dto';
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { hashSenha, compararSenha } from '../utils/bcrypt';
-import { gerarToken } from '../utils/jwt';
+import { gerarToken, generateRefreshToken } from '../utils/jwt';
 import logger from '../utils/logger';
 import { ValidationError, AuthenticationError, AuthorizationError } from '../utils/errors';
 import { EmailService } from './email.service';
@@ -217,12 +217,15 @@ export class AuthService implements IAuthService {
       isVerified: true
     });
 
+    const refreshToken = await generateRefreshToken(user.id_usuario);
+
     logger.info(`Usuário logado: ${user.email}`);
 
     return {
       success: true,
       message: 'Login realizado com sucesso',
       token,
+      refreshToken,
       usuario: {
         id: user.id_usuario,
         nome: user.nome,

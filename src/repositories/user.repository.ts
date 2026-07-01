@@ -262,4 +262,78 @@ export class UserRepository implements IUserRepository {
       }
     });
   }
+
+  async followUser(seguidorId: string, seguidoId: string): Promise<void> {
+    await this.prisma.seguidor.create({
+      data: {
+        id_seguidor_usuario: seguidorId,
+        id_seguido: seguidoId,
+      },
+    });
+  }
+
+  async unfollowUser(seguidorId: string, seguidoId: string): Promise<void> {
+    await this.prisma.seguidor.delete({
+      where: {
+        id_seguidor_usuario_id_seguido: {
+          id_seguidor_usuario: seguidorId,
+          id_seguido: seguidoId,
+        },
+      },
+    });
+  }
+
+  async isFollowing(seguidorId: string, seguidoId: string): Promise<boolean> {
+    const seguidor = await this.prisma.seguidor.findUnique({
+      where: {
+        id_seguidor_usuario_id_seguido: {
+          id_seguidor_usuario: seguidorId,
+          id_seguido: seguidoId,
+        },
+      },
+    });
+    return !!seguidor;
+  }
+
+  async getSeguidores(userId: string): Promise<any[]> {
+    return this.prisma.seguidor.findMany({
+      where: { id_seguido: userId },
+      include: {
+        seguidor: {
+          select: {
+            id_usuario: true,
+            nome: true,
+            email: true,
+            foto_perfil: true,
+          },
+        },
+      },
+      orderBy: { data_inicio: 'desc' },
+    });
+  }
+
+  async getSeguindo(userId: string): Promise<any[]> {
+    return this.prisma.seguidor.findMany({
+      where: { id_seguidor_usuario: userId },
+      include: {
+        seguido: {
+          select: {
+            id_usuario: true,
+            nome: true,
+            email: true,
+            foto_perfil: true,
+          },
+        },
+      },
+      orderBy: { data_inicio: 'desc' },
+    });
+  }
+
+  async countSeguidores(userId: string): Promise<number> {
+    return this.prisma.seguidor.count({ where: { id_seguido: userId } });
+  }
+
+  async countSeguindo(userId: string): Promise<number> {
+    return this.prisma.seguidor.count({ where: { id_seguidor_usuario: userId } });
+  }
 }

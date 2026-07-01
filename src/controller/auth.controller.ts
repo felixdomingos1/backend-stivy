@@ -6,8 +6,6 @@ import { FazedorRepository } from '../repositories/fazedor.repository';
 import {
   RegisterUserDto,
   LoginDto,
-  PasswordResetRequestDto,
-  PasswordResetDto,
   VerifyEmailDto,
   ResendOTPDto,
   RequestPasswordResetDto
@@ -15,6 +13,7 @@ import {
 import { AuthRequest } from '../middleware/auth.middleware';
 import logger from '../utils/logger';
 import { AuthenticationError, ValidationError } from '../utils/errors';
+import { verifyRefreshToken, generateAccessToken, generateRefreshToken, revokeRefreshToken, revokeAllUserTokens } from '../utils/jwt';
 
 export class AuthController {
   private authService: AuthService;
@@ -167,8 +166,49 @@ export class AuthController {
     }
   }
 
+  async refreshToken(req: Request, res: Response): Promise<void> {
+    try {
+      const { refreshToken } = req.body;
+
+      if (!refreshToken) {
+        res.status(400).json({ success: false, error: 'Refresh token é obrigatório' });
+        return;
+      }
+
+      const payload = await verifyRefreshToken(refreshToken);
+      const user = await new UserRepository().findByIdComplete(payload.id_usuario);
+
+      if (!user || user.status !== 'ativo') {
+        res.status(401).json({ success: false, error: 'Usuário inválido ou inativo' });
+        return;
+      }
+
+      const newAccessToken = generateAccessToken({
+        id: user.id_usuario,
+        email: user.email,
+        tipo: user.tipo,
+        isVerified: user.email_verificado,
+      });
+
+      const newRefreshToken = await generateRefreshToken(user.id_usuario);
+      await revokeRefreshToken(refreshToken);
+
+      res.json({
+        success: true,
+        token: newAccessToken,
+        refreshToken: newRefreshToken,
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   async logout(req: AuthRequest, res: Response): Promise<void> {
     try {
+      if (req.usuarioId) {
+        await revokeAllUserTokens(req.usuarioId);
+      }
+
       res.json({
         success: true,
         message: 'Logout realizado com sucesso'
