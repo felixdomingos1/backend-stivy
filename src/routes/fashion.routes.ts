@@ -222,6 +222,7 @@ router.delete('/servicos/:id/reacoes',
 );
 
 router.get('/servicos/:id/reacoes',
+  autenticar,
   fashionController.getReacoesServico.bind(fashionController)
 );
 

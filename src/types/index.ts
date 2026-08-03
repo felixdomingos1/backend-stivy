@@ -34,7 +34,7 @@ export interface RegisterUserDto {
   senha: string;
   telefone?: string;
   tipo: 'fazedor' | 'apreciador';
-  tipo_fazedor?: 'agencia' | 'estilista' | 'maquiador' | 'fotografo' | 'modelo_freelancer';
+  tipo_fazedor?: 'agencia' | 'estilista' | 'maquiador' | 'fotografo' | 'modelo_freelancer' | 'videografo' | 'designer' | 'influenciador' | 'criador_conteudo' | 'cabeleireiro' | 'barbeiro' | 'produtor_eventos' | 'publicidade' | 'marketing' | 'desfiles' | 'casting' | 'moda' | 'outros';
 }
 
 export interface LoginDto {

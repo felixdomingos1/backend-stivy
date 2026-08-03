@@ -68,7 +68,7 @@ export const invalidateCache = async (pattern: string): Promise<void> => {
 
 export const invalidateOnWrite = (patterns: string[]) => {
   return async (_: Request, res: Response, next: NextFunction) => {
-    const originalJson = res.json;
+    const originalJson = res.json.bind(res);
 
       (res as any).json = async function (body: any): Promise<any> {
         if (body && body.success !== false) {

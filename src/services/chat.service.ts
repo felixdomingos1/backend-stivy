@@ -196,12 +196,20 @@ export class ChatService {
     }
   }
 
-  async marcarMensagemComoLida(id_mensagem: string, id_usuario: string) {
+  async marcarMensagemComoLida(id_mensagem: string, id_usuario: string, io?: SocketServer) {
     try {
       const mensagem = await this.chatRepository.markMessageAsRead(id_mensagem, id_usuario);
 
       if (!mensagem) {
         throw new NotFoundError('Mensagem não encontrada');
+      }
+
+      if (io) {
+        io.to(`chat:${mensagem.id_conversa}`).emit('chat:read', {
+          id_mensagem,
+          id_conversa: mensagem.id_conversa,
+          lida: true,
+        });
       }
 
       return mensagem;
@@ -211,7 +219,7 @@ export class ChatService {
     }
   }
 
-  async marcarTudoComoLido(id_conversa: string, id_usuario: string) {
+  async marcarTudoComoLido(id_conversa: string, id_usuario: string, io?: SocketServer) {
     try {
       const conversa = await this.chatRepository.findConversationById(id_conversa);
 
@@ -228,6 +236,13 @@ export class ChatService {
       }
 
       const count = await this.chatRepository.markAllAsRead(id_conversa, id_usuario);
+
+      if (io) {
+        io.to(`chat:${id_conversa}`).emit('chat:read', {
+          id_conversa,
+          lida: true,
+        });
+      }
 
       logger.info(
         `${count} mensagens marcadas como lidas na conversa ${id_conversa} pelo usuário ${id_usuario}`

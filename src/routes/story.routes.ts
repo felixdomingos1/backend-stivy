@@ -8,6 +8,10 @@ import { StoryController } from '../controller/story.controller';
 const router = Router();
 const storyController = new StoryController();
 
+router.get('/',
+  storyController.listarStories.bind(storyController)
+);
+
 router.use(autenticar);
 
 router.post('/',

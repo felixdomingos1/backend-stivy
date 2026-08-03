@@ -175,7 +175,8 @@ export class ChatController {
       }
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const mensagem = await this.chatService.marcarMensagemComoLida(id, req.usuarioId);
+      const io = req.app.get('io');
+      const mensagem = await this.chatService.marcarMensagemComoLida(id, req.usuarioId, io);
 
       res.status(200).json({
         success: true,
@@ -202,7 +203,8 @@ export class ChatController {
       }
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const result = await this.chatService.marcarTudoComoLido(id, req.usuarioId);
+      const io = req.app.get('io');
+      const result = await this.chatService.marcarTudoComoLido(id, req.usuarioId, io);
 
       res.status(200).json({
         success: true,

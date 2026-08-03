@@ -31,7 +31,7 @@ export const registerValidation = [
 
   body('tipo_fazedor')
     .optional()
-    .isIn(['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer'])
+    .isIn(['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer', 'videografo', 'designer', 'influenciador', 'criador_conteudo', 'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade', 'marketing', 'desfiles', 'casting', 'moda', 'outros'])
     .withMessage('Tipo de fazedor inválido')
     .custom((value, { req }) => {
       if (req.body.tipo === 'fazedor' && !value) {

@@ -119,7 +119,7 @@ export const listServicosValidation = [
 export const listFazedoresValidation = [
   query('tipo_fazedor')
     .optional()
-    .isIn(['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer'])
+    .isIn(['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer', 'videografo', 'designer', 'influenciador', 'criador_conteudo', 'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade', 'marketing', 'desfiles', 'casting', 'moda', 'outros'])
     .withMessage('Tipo de fazedor inválido'),
 
   query('status_aprovacao')

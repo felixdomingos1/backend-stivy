@@ -215,7 +215,7 @@ export class FashionService {
   }
 
   async getTiposFazedores(): Promise<string[]> {
-    return ['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer'];
+    return ['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer', 'videografo', 'designer', 'influenciador', 'criador_conteudo', 'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade', 'marketing', 'desfiles', 'casting', 'moda', 'outros'];
   }
 
   async search(
