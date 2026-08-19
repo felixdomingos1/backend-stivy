@@ -12,6 +12,13 @@ export interface CreateEventoData {
   data_fim: Date;
   tipo_evento: string;
   imagem_url?: string;
+  imagem_public_id?: string;
+  imagens?: {
+    imagem_url: string;
+    imagem_public_id: string;
+    ordem: number;
+    legenda?: string;
+  }[];
   vagas_disponiveis?: number;
   valor_ingresso?: number;
 }
@@ -61,9 +68,25 @@ export class EventoRepository {
         data_fim: data.data_fim,
         tipo_evento: data.tipo_evento as any,
         imagem_url: data.imagem_url,
+        imagem_public_id: data.imagem_public_id,
+        ...(data.imagens && data.imagens.length > 0 && {
+          imagens: {
+            create: data.imagens.map((img, index) => ({
+              imagem_url: img.imagem_url,
+              imagem_public_id: img.imagem_public_id,
+              ordem: img.ordem ?? index,
+              legenda: img.legenda
+            }))
+          }
+        }),
         vagas_disponiveis: data.vagas_disponiveis || 0,
         valor_ingresso: data.valor_ingresso || 0,
         status: 'ativo'
+      },
+      include: {
+        imagens: {
+          orderBy: { ordem: 'asc' }
+        }
       }
     });
   }
@@ -72,6 +95,9 @@ export class EventoRepository {
     return await this.prisma.evento.findUnique({
       where: { id_evento: id },
       include: {
+        imagens: {
+          orderBy: { ordem: 'asc' }
+        },
         organizador: {
           include: {
             usuario: {
@@ -143,6 +169,9 @@ export class EventoRepository {
       take: take || 50,
       orderBy: { data_inicio: 'asc' },
       include: {
+        imagens: {
+          orderBy: { ordem: 'asc' }
+        },
         organizador: {
           include: {
             usuario: {

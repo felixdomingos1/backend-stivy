@@ -128,6 +128,34 @@ export class UserService {
       bio: dto.bio
     });
 
+    // ✅ Atualizar dados de modelo freelancer se o usuário for um
+    const fazedor = await this.fazedorRepository.findFazedorByUserId(userId);
+    if (fazedor && fazedor.tipo_fazedor === 'modelo_freelancer' && fazedor.modeloFreelancer) {
+      const modeloData: any = {};
+      if (dto.nome_artistico !== undefined) modeloData.nome_artistico = dto.nome_artistico;
+      if (dto.altura !== undefined) modeloData.altura = dto.altura ? parseFloat(String(dto.altura).replace(',', '.')) : null;
+      if (dto.peso !== undefined) modeloData.peso = dto.peso ? parseFloat(String(dto.peso).replace(',', '.')) : null;
+      if (dto.busto !== undefined) modeloData.busto = dto.busto ? parseInt(dto.busto) : null;
+      if (dto.cintura !== undefined) modeloData.cintura = dto.cintura ? parseInt(dto.cintura) : null;
+      if (dto.quadril !== undefined) modeloData.quadril = dto.quadril ? parseInt(dto.quadril) : null;
+      if (dto.sapato !== undefined) modeloData.sapato = dto.sapato ? parseInt(dto.sapato) : null;
+      if (dto.roupa !== undefined) modeloData.roupa = dto.roupa ? parseInt(dto.roupa) : null;
+      if (dto.cabelo !== undefined) modeloData.cabelo = dto.cabelo;
+      if (dto.olhos !== undefined) modeloData.olhos = dto.olhos;
+      if (dto.idade !== undefined) modeloData.idade = dto.idade ? parseInt(dto.idade) : null;
+      if (dto.nacionalidade !== undefined) modeloData.nacionalidade = dto.nacionalidade;
+      if (dto.experiencia !== undefined) modeloData.experiencia = dto.experiencia;
+      if (dto.habilidades !== undefined) modeloData.habilidades = dto.habilidades;
+      if (dto.status_modelo !== undefined) modeloData.status = dto.status_modelo;
+
+      if (Object.keys(modeloData).length > 0) {
+        await prisma.modeloFreelancer.update({
+          where: { id_fazedor: fazedor.id_fazedor },
+          data: modeloData
+        });
+      }
+    }
+
     logger.info(`Perfil atualizado para usuário: ${user.email}`);
 
     return {
@@ -196,7 +224,7 @@ export class UserService {
   }
 
   async addFavorito(userId: string, fazedorId: string): Promise<void> {
-    const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorId);
+    const fazedor = await this.fazedorRepository.findFazedorById(fazedorId);
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
     }
@@ -233,19 +261,33 @@ export class UserService {
     const favoritos = await this.userRepository.listFavoritos(userId);
     const fazedor = await this.fazedorRepository.findFazedorByUserId(userId);
 
+    const [totalSeguidores, totalSeguindo] = await Promise.all([
+      this.userRepository.countSeguidores(userId),
+      this.userRepository.countSeguindo(userId),
+    ]);
+
     let estatisticas = {
       total_favoritos: favoritos.length,
       total_servicos: 0,
-      total_seguidores: 0,
-      total_seguindo: 0,
+      total_seguidores: totalSeguidores,
+      total_seguindo: totalSeguindo,
+      total_avaliacoes: 0,
+      avaliacao_media: 0,
       data_cadastro: user.data_cadastro,
     };
 
     if (fazedor) {
-      const servicos = await prisma.servico.count({
-        where: { id_fazedor: fazedor.id_fazedor }
-      });
+      const [servicos, totalAvaliacoes, aggregate] = await Promise.all([
+        prisma.servico.count({ where: { id_fazedor: fazedor.id_fazedor } }),
+        prisma.avaliacao.count({ where: { id_avaliado: fazedor.id_fazedor } }),
+        prisma.avaliacao.aggregate({
+          where: { id_avaliado: fazedor.id_fazedor },
+          _avg: { nota: true },
+        }),
+      ]);
       estatisticas.total_servicos = servicos;
+      estatisticas.total_avaliacoes = totalAvaliacoes;
+      estatisticas.avaliacao_media = aggregate._avg.nota ?? 0;
     }
 
     return estatisticas;
@@ -306,5 +348,25 @@ export class UserService {
       throw new NotFoundError('Usuário não encontrado');
     }
     return this.userRepository.getSeguidores(userId);
+  }
+
+  async verificarSeguindo(seguidorId: string, seguidoId: string): Promise<boolean> {
+    return this.userRepository.isFollowing(seguidorId, seguidoId);
+  }
+
+  async contarSeguidores(userId: string): Promise<number> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundError('Usuário não encontrado');
+    }
+    return this.userRepository.countSeguidores(userId);
+  }
+
+  async contarSeguindo(userId: string): Promise<number> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundError('Usuário não encontrado');
+    }
+    return this.userRepository.countSeguindo(userId);
   }
 }

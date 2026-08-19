@@ -33,6 +33,9 @@ router.post('/seguir/:id', userController.seguirUsuario.bind(userController));
 router.delete('/seguir/:id', userController.deixarSeguirUsuario.bind(userController));
 router.get('/seguidores', userController.getMeusSeguidores.bind(userController));
 router.get('/seguindo', userController.getQuemSigo.bind(userController));
+router.get('/seguidores/verificar/:id', userController.verificarSeguindo.bind(userController));
+router.get('/seguidores/contar/:id', userController.contarSeguidores.bind(userController));
+router.get('/seguindo/contar/:id', userController.contarSeguindo.bind(userController));
 
 router.get('/:id/seguidores', userController.getUserSeguidores.bind(userController));
 

@@ -26,7 +26,22 @@ export class CloudinaryService {
     const uploadOptions = { ...this.defaultOptions, ...options };
 
     return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
+      let uploadStream: any;
+      const timeout = setTimeout(() => {
+        reject(new Error('Tempo esgotado ao enviar imagem para a nuvem'));
+      }, 60000);
+
+      const cleanup = (fn: (e: any, r?: any) => void) => (error: any, result?: any) => {
+        clearTimeout(timeout);
+        if (uploadStream) {
+          try {
+            uploadStream.destroy();
+          } catch (_) { /* ignore */ }
+        }
+        fn(error, result);
+      };
+
+      uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: uploadOptions.folder,
           quality: uploadOptions.quality,
@@ -36,15 +51,16 @@ export class CloudinaryService {
           tags: uploadOptions.tags,
           transformation: uploadOptions.transformation
         },
-        (error, result) => {
+        cleanup((error, result) => {
           if (error) reject(error);
           else resolve(result as CloudinaryUploadResult);
-        }
+        })
       );
 
       const readableStream = new Readable();
       readableStream.push(buffer);
       readableStream.push(null);
+      readableStream.on('error', cleanup((error) => reject(error)));
       readableStream.pipe(uploadStream);
     });
   }

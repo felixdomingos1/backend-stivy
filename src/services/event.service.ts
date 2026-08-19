@@ -31,6 +31,8 @@ export class EventService {
       throw new ValidationError('Data do evento não pode ser no passado');
     }
 
+    const imagens = dto.imagens || [];
+
     const evento = await this.eventoRepository.create({
       id_organizador: fazedor.id_fazedor,
       titulo: dto.titulo,
@@ -41,6 +43,9 @@ export class EventService {
       data_inicio: dto.data_inicio,
       data_fim: dto.data_fim,
       tipo_evento: dto.tipo_evento,
+      imagem_url: imagens.length > 0 ? imagens[0].imagem_url : dto.imagem_url,
+      imagem_public_id: imagens.length > 0 ? imagens[0].imagem_public_id : dto.imagem_public_id,
+      imagens: imagens,
       vagas_disponiveis: dto.vagas_disponiveis,
       valor_ingresso: dto.valor_ingresso
     });

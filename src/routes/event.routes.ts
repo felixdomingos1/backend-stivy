@@ -11,6 +11,7 @@ import {
   listParticipantesValidation
 } from '../validations/event.validation';
 import { EventController } from '../controller/event.controller';
+import { handleUploadError, uploadFotosEvento } from '../middleware/upload.middleware';
 
 const router = Router();
 const eventController = new EventController();
@@ -36,6 +37,8 @@ router.get('/:id',
 
 router.post('/',
   autenticar,
+  uploadFotosEvento,
+  handleUploadError,
   createEventoValidation,
   validate,
   invalidateOnWrite(['list:*/api/events*']),

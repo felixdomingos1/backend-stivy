@@ -139,19 +139,30 @@ export class FazedorRepository {
   async findFazedorWithDetails(userId: string) {
     return await this.prisma.fazedor.findUnique({
       where: { id_usuario: userId },
-      include: {
-        usuario: true,
-        agencia: {
-          include: { modelos: true }
-        },
-        avaliacoesRecebidas:true,
-        modeloFreelancer: true,
-        estilista: true,
-        maquiador: true,
-        fotografo: true,
-        servicos: true
-      }
+      include: this.fazedorDetailsInclude
     });
+  }
+
+  async findFazedorByIdWithDetails(id_fazedor: string) {
+    return await this.prisma.fazedor.findUnique({
+      where: { id_fazedor },
+      include: this.fazedorDetailsInclude
+    });
+  }
+
+  private get fazedorDetailsInclude() {
+    return {
+      usuario: true,
+      agencia: {
+        include: { modelos: true }
+      },
+      avaliacoesRecebidas: true,
+      modeloFreelancer: true,
+      estilista: true,
+      maquiador: true,
+      fotografo: true,
+      servicos: true
+    } as const;
   }
 
   async findAll(filters?: FazedorFilters, skip?: number, take?: number): Promise<any[]> {

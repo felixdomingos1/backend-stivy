@@ -268,9 +268,21 @@ model ModeloFreelancer {
 
   nome_artistico String   @db.VarChar(100)
   altura         Decimal? @db.Decimal(3, 2)
+  peso           Decimal? @db.Decimal(5, 2)
   busto          Int?
   cintura        Int?
   quadril        Int?
+
+  sapato Int?
+  roupa  Int?
+
+  cabelo String? @db.VarChar(50)
+  olhos  String? @db.VarChar(50)
+
+  idade         Int?
+  nacionalidade String? @db.VarChar(50)
+  experiencia   String? @db.Text
+  habilidades   String? @db.Text
 
   foto_url       String? @db.VarChar(255)
   portifolio_url String? @db.VarChar(255)

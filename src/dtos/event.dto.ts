@@ -11,6 +11,12 @@ export interface CreateEventoDto {
   valor_ingresso?: number;
   imagem_url?: string;
   imagem_public_id?: string;
+  imagens?: {
+    imagem_url: string;
+    imagem_public_id: string;
+    ordem: number;
+    legenda?: string;
+  }[];
 }
 
 export interface UpdateEventoDto {

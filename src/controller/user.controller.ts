@@ -392,6 +392,68 @@ export class UserController {
     }
   }
 
+  async verificarSeguindo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        return;
+      }
+
+      const seguindo = await this.userService.verificarSeguindo(req.usuarioId, id as string);
+
+      res.json({
+        success: true,
+        data: { seguindo }
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async contarSeguidores(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        return;
+      }
+
+      const seguidores = await this.userService.contarSeguidores(id as string);
+
+      res.json({
+        success: true,
+        data: { seguidores }
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async contarSeguindo(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        return;
+      }
+
+      const seguindo = await this.userService.contarSeguindo(id as string);
+
+      res.json({
+        success: true,
+        data: { seguindo }
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   private handleError(error: any, res: Response): void {
     logger.error('Erro na requisição do usuário:', error);
 

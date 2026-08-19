@@ -6,6 +6,7 @@ import { EventoRepository } from '../repositories/evento.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { CreateEventoDto, UpdateEventoDto } from '../dtos/event.dto';
+import { processMultipleUploads } from '../middleware/upload.middleware';
 import logger from '../utils/logger';
 import { ValidationError, NotFoundError } from '../utils/errors';
 
@@ -37,6 +38,27 @@ export class EventController {
       }
 
       const dto: CreateEventoDto = req.body;
+
+      // ✅ Upload das imagens do evento (se enviadas)
+      let imagens: Array<{
+        imagem_url: string;
+        imagem_public_id: string;
+        ordem: number;
+      }> = [];
+      if (req.files && (req.files as Express.Multer.File[]).length > 0) {
+        const files = req.files as Express.Multer.File[];
+        const uploads = await processMultipleUploads(files, 'eventos');
+        imagens = uploads
+          .filter((u): u is { public_id: string; url: string; thumbnail: string } => u !== null)
+          .map((u, index) => ({
+            imagem_url: u.url,
+            imagem_public_id: u.public_id,
+            ordem: index
+          }));
+      }
+
+      dto.imagens = imagens;
+
       const result = await this.eventService.createEvento(req.usuarioId, dto);
 
       res.status(201).json({ success: true, data: result });

@@ -76,7 +76,22 @@ export const passwordResetValidation = [
 export const updateProfileValidation = [
   body('nome').optional().isLength({ min: 3 }).withMessage('Nome deve ter no mínimo 3 caracteres'),
   body('telefone').optional().matches(/^[0-9]{9,11}$/).withMessage('Telefone inválido'),
-  body('bio').optional().isLength({ max: 500 }).withMessage('Bio deve ter no máximo 500 caracteres')
+  body('bio').optional().isLength({ max: 500 }).withMessage('Bio deve ter no máximo 500 caracteres'),
+  body('nome_artistico').optional().isLength({ max: 100 }).withMessage('Nome artístico inválido'),
+  body('altura').optional().isDecimal().withMessage('Altura inválida'),
+  body('peso').optional().isDecimal().withMessage('Peso inválido'),
+  body('busto').optional().isInt({ min: 0 }).withMessage('Busto inválido'),
+  body('cintura').optional().isInt({ min: 0 }).withMessage('Cintura inválida'),
+  body('quadril').optional().isInt({ min: 0 }).withMessage('Quadril inválido'),
+  body('sapato').optional().isInt({ min: 0 }).withMessage('Sapato inválido'),
+  body('roupa').optional().isInt({ min: 0 }).withMessage('Roupa inválida'),
+  body('cabelo').optional().isLength({ max: 50 }).withMessage('Cor de cabelo inválida'),
+  body('olhos').optional().isLength({ max: 50 }).withMessage('Cor dos olhos inválida'),
+  body('idade').optional().isInt({ min: 0, max: 120 }).withMessage('Idade inválida'),
+  body('nacionalidade').optional().isLength({ max: 50 }).withMessage('Nacionalidade inválida'),
+  body('experiencia').optional().isLength({ max: 1000 }).withMessage('Experiência deve ter no máximo 1000 caracteres'),
+  body('habilidades').optional().isLength({ max: 1000 }).withMessage('Habilidades devem ter no máximo 1000 caracteres'),
+  body('status_modelo').optional().isIn(['disponivel', 'indisponivel']).withMessage('Status inválido')
 ];
 
 export const updatePasswordValidation = [

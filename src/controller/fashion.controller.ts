@@ -605,6 +605,39 @@ export class FashionController {
     }
   }
 
+  async criarModeloComFoto(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ error: 'Nenhuma imagem enviada' });
+        return;
+      }
+
+      let data: any = {};
+      if (req.body.data) {
+        try {
+          data = JSON.parse(req.body.data);
+        } catch (error) {
+          res.status(400).json({ error: 'Dados do modelo inválidos' });
+          return;
+        }
+      }
+
+      const result = await this.modeloService.criarModeloComFoto(
+        req.usuarioId,
+        data,
+        req.file.buffer
+      );
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   async listarModelosDaAgencia(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {

@@ -1,17 +1,22 @@
 import { ServicoRepository, ServicoFilters } from '../repositories/servico.repository';
 import { FazedorRepository, FazedorFilters } from '../repositories/fazedor.repository';
 import { AvaliacaoRepository } from '../repositories/avaliacao.repository';
+import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { CreateServicoDto, UpdateServicoDto } from '../dtos/fashion.dto';
 import { ValidationError, NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
 import prisma from '../config/database';
 
 export class FashionService {
+  private notificacaoRepository: NotificacaoRepository;
+
   constructor(
     private servicoRepository: ServicoRepository,
     private fazedorRepository: FazedorRepository,
     private avaliacaoRepository: AvaliacaoRepository
-  ) { }
+  ) {
+    this.notificacaoRepository = new NotificacaoRepository();
+  }
 
   async createServico(fazedorId: string, dto: CreateServicoDto): Promise<any> {
     logger.info('Criando serviço:', { fazedorId, dto });
@@ -103,7 +108,8 @@ export class FashionService {
   }
 
   async getFazedorById(fazedorUserId: string): Promise<any> {
-    const fazedor = await this.fazedorRepository.findFazedorWithDetails(fazedorUserId);
+    const fazedor = await this.fazedorRepository.findFazedorWithDetails(fazedorUserId)
+      ?? await this.fazedorRepository.findFazedorByIdWithDetails(fazedorUserId);
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
     }
@@ -162,6 +168,20 @@ export class FashionService {
       nota,
       comentario
     });
+
+    if (fazedorUserId !== avaliadorUserId) {
+      const avaliador = await prisma.usuario.findUnique({
+        where: { id_usuario: avaliadorUserId },
+        select: { nome: true },
+      });
+      await this.notificacaoRepository.create({
+        id_usuario: fazedorUserId,
+        titulo: 'Nova avaliação',
+        mensagem: `${avaliador?.nome ?? 'Alguém'} avaliou o seu perfil com ${nota} estrela${nota > 1 ? 's' : ''}`,
+        tipo: 'sistema',
+        link: `/fazedor/${fazedor.id_fazedor}`,
+      });
+    }
 
     logger.info(`Avaliação criada: ${avaliadorUserId} -> ${fazedor.id_fazedor} (${nota})`);
     return avaliacao;
@@ -269,11 +289,26 @@ export class FashionService {
     }
 
     if (tipo === 'fazedores' || tipo === 'todos') {
+      // `tipo_fazedor` é um enum no Prisma — `contains` não é suportado.
+      // Filtramos por igualdade quando o termo corresponder a um tipo válido.
+      const enumValues = [
+        'agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer',
+        'videografo', 'designer', 'influenciador', 'criador_conteudo',
+        'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade',
+        'marketing', 'desfiles', 'casting', 'moda', 'outros',
+      ];
+      const termoLower = searchTerm.toLowerCase();
+      const tiposCorrespondentes = enumValues.filter(
+        (t) => t.includes(termoLower) || termoLower.includes(t)
+      );
+
       const whereFazedores: any = {
         OR: [
           { usuario: { nome: { contains: searchTerm } } },
           { biografia: { contains: searchTerm } },
-          { tipo_fazedor: { contains: searchTerm } as any },
+          ...(tiposCorrespondentes.length > 0
+            ? [{ tipo_fazedor: { in: tiposCorrespondentes } }]
+            : []),
         ],
       };
 
@@ -299,8 +334,8 @@ export class FashionService {
         prisma.fazedor.count({ where: whereFazedores }),
       ]);
 
-      result.fazedores = { data: fazedores, total: totalFazedores };
-    }
+result.fazedores = { data: fazedores, total: totalFazedores };
+      }
 
     if (tipo === 'eventos' || tipo === 'todos') {
       const whereEventos: any = {
@@ -334,7 +369,7 @@ export class FashionService {
     }
 
     if (tipo !== 'todos') {
-      const dataKey = tipo + 's';
+      const dataKey = tipo;
       const items = result[dataKey]?.data || [];
       const total = result[dataKey]?.total || 0;
       return {

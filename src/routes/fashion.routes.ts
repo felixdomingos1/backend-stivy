@@ -13,7 +13,7 @@ import {
   searchValidation
 } from '../validations/fashion.validation';
 import { FashionController } from '../controller/fashion.controller';
-import { handleUploadError, uploadMultiple, uploadSingle } from '../middleware/upload.middleware';
+import { handleUploadError, uploadMultiple, uploadSingle, uploadFotoPerfil } from '../middleware/upload.middleware';
 
 const router = Router();
 const fashionController = new FashionController();
@@ -151,6 +151,13 @@ router.get('/categorias/servicos',
 router.get('/tipos/fazedores',
   cacheListResponse(3600),
   fashionController.getTiposFazedores.bind(fashionController)
+);
+
+router.post('/modelos/criar-com-foto',
+  autenticar,
+  uploadFotoPerfil,
+  handleUploadError,
+  fashionController.criarModeloComFoto.bind(fashionController)
 );
 
 router.post('/modelos',

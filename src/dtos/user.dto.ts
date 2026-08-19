@@ -4,6 +4,22 @@ export interface UpdateUserDto {
   foto_perfil?: string;
   bio?: string;
   foto_perfil_public_id?: string;
+
+  nome_artistico?: string;
+  altura?: string;
+  peso?: string;
+  busto?: string;
+  cintura?: string;
+  quadril?: string;
+  sapato?: string;
+  roupa?: string;
+  cabelo?: string;
+  olhos?: string;
+  idade?: string;
+  nacionalidade?: string;
+  experiencia?: string;
+  habilidades?: string;
+  status_modelo?: string;
 }
 
 export interface UpdatePasswordDto {
