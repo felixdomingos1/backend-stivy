@@ -176,12 +176,12 @@ async function main() {
 
   // 5. Eventos
   const eventosData = [
-    { titulo: 'Luanda Fashion Week 2026', descricao: 'A maior semana de moda de Luanda.', tipo: 'desfile', vagas: 500, local: 'BAIA DE LUANDA' },
-    { titulo: 'Workshop de Maquiagem', descricao: 'Aprenda técnicas avançadas de maquiagem.', tipo: 'workshop', vagas: 30, local: 'Centro de Convenções' },
-    { titulo: 'Casting para Modelos', descricao: 'Seleção de modelos para nova coleção.', tipo: 'casting', vagas: 100, local: 'Hotel Palma' },
-    { titulo: 'Concurso de Estilistas', descricao: 'Concurso para novos talentos da moda.', tipo: 'concurso', vagas: 50, local: 'ISPTEC' },
-    { titulo: 'Feira de Moda Angolana', descricao: 'Exposição de marcas e designers angolanos.', tipo: 'outro', vagas: 200, local: 'Pavilhão Multiúsos' },
-    { titulo: 'Workshop de Fotografia', descricao: 'Técnicas de fotografia de moda.', tipo: 'workshop', vagas: 25, local: 'Estúdio Criativo' },
+    { titulo: 'Luanda Fashion Week 2026', descricao: 'A maior semana de moda de Luanda.', tipo: 'desfile', local: 'BAIA DE LUANDA' },
+    { titulo: 'Workshop de Maquiagem', descricao: 'Aprenda técnicas avançadas de maquiagem.', tipo: 'workshop', local: 'Centro de Convenções' },
+    { titulo: 'Casting para Modelos', descricao: 'Seleção de modelos para nova coleção.', tipo: 'casting', local: 'Hotel Palma' },
+    { titulo: 'Concurso de Estilistas', descricao: 'Concurso para novos talentos da moda.', tipo: 'concurso', local: 'ISPTEC' },
+    { titulo: 'Feira de Moda Angolana', descricao: 'Exposição de marcas e designers angolanos.', tipo: 'outro', local: 'Pavilhão Multiúsos' },
+    { titulo: 'Workshop de Fotografia', descricao: 'Técnicas de fotografia de moda.', tipo: 'workshop', local: 'Estúdio Criativo' },
   ];
 
   for (let i = 0; i < eventosData.length; i++) {
@@ -198,7 +198,6 @@ async function main() {
         descricao: eventosData[i].descricao,
         local: eventosData[i].local,
         tipo_evento: eventosData[i].tipo as any,
-        vagas_disponiveis: eventosData[i].vagas,
         data_inicio: dataInicio,
         data_fim: dataFim,
         status: 'ativo',

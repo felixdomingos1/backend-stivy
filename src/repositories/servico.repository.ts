@@ -18,6 +18,7 @@ export interface UpdateServicoData {
   categoria?: string;
   valor?: number;
   imagem_url?: string;
+  imagem_public_id?: string;
   status?: string;
   tempo_estimado?: string;
 }
@@ -40,7 +41,6 @@ export type ServicoWithRelations = Servico & {
     usuario: {
       id_usuario: string;
       nome: string;
-      email: string;
       foto_perfil: string | null;
     };
   };
@@ -62,6 +62,7 @@ export class ServicoRepository {
         categoria: data.categoria,
         valor: data.valor,
         imagem_url: data.imagem_url,
+        imagem_public_id: data.imagem_public_id,
         tempo_estimado: data.tempo_estimado,
         status: 'ativo'
       }
@@ -78,13 +79,14 @@ export class ServicoRepository {
               select: {
                 id_usuario: true,
                 nome: true,
-                email: true,
-                telefone: true,
-                foto_perfil: true
+                foto_perfil: true,
+                tipo: true
               }
             }
           }
-        }
+        },
+        imagens: { orderBy: { ordem: 'asc' } },
+        _count: { select: { servicoReacaos: true, servicoComentarios: true, servicoCompartilhamentos: true } }
       }
     });
 
@@ -135,16 +137,17 @@ export class ServicoRepository {
               select: {
                 id_usuario: true,
                 nome: true,
-                email: true,
                 foto_perfil: true
               }
             }
           }
         },
-        servicoReacaos:true,
-        imagens:true,
-        servicoComentarios:true,
-        servicoCompartilhamentos:true
+        // Linhas mínimas (compatibilidade com o app) + contagens agregadas
+        servicoReacaos: { select: { id_reacao: true, id_usuario: true, tipo: true } },
+        imagens: { orderBy: { ordem: 'asc' } },
+        servicoComentarios: { select: { id_comentario: true } },
+        servicoCompartilhamentos: { select: { id_compartilhamento: true } },
+        _count: { select: { servicoReacaos: true, servicoComentarios: true, servicoCompartilhamentos: true } }
       }
     });
 
@@ -195,6 +198,7 @@ export class ServicoRepository {
         categoria: data.categoria,
         valor: data.valor,
         imagem_url: data.imagem_url,
+        imagem_public_id: data.imagem_public_id,
         tempo_estimado: data.tempo_estimado,
         status: data.status as any
       }
@@ -218,7 +222,6 @@ export class ServicoRepository {
               select: {
                 id_usuario: true,
                 nome: true,
-                email: true,
                 foto_perfil: true
               }
             }
@@ -241,7 +244,6 @@ export class ServicoRepository {
               select: {
                 id_usuario: true,
                 nome: true,
-                email: true,
                 foto_perfil: true
               }
             }
@@ -270,50 +272,31 @@ export class ServicoRepository {
   }
 
   async getEstatisticas(id_fazedor: string): Promise<any> {
-    const servicos = await this.prisma.servico.findMany({
-      where: { id_fazedor },
-      include: {
-        requisicoes: true
-      }
-    });
+    const [porStatus, media, reqPorStatus] = await Promise.all([
+      this.prisma.servico.groupBy({ by: ['status'], where: { id_fazedor }, _count: { _all: true } }),
+      this.prisma.servico.aggregate({ where: { id_fazedor }, _avg: { valor: true } }),
+      this.prisma.requisicao.groupBy({ by: ['status'], where: { servico: { id_fazedor } }, _count: { _all: true } })
+    ]);
 
-    const totalServicos = servicos.length;
-    const servicosAtivos = servicos.filter(s => s.status === 'ativo').length;
-    const servicosInativos = servicos.filter(s => s.status === 'inativo').length;
-    const servicosPausados = servicos.filter(s => s.status === 'pausado').length;
-    const totalRequisicoes = servicos.reduce((sum, s) => sum + s.requisicoes.length, 0);
-    const valorMedio = totalServicos > 0
-      ? servicos.reduce((sum, s) => sum + (s.valor?.toNumber() || 0), 0) / totalServicos
-      : 0;
-
-    const requisicoesPorStatus = {
-      pendentes: 0,
-      aceitas: 0,
-      recusadas: 0,
-      concluidas: 0,
-      canceladas: 0
-    };
-
-    servicos.forEach(servico => {
-      servico.requisicoes.forEach(req => {
-        switch (req.status) {
-          case 'pendente': requisicoesPorStatus.pendentes++; break;
-          case 'aceita': requisicoesPorStatus.aceitas++; break;
-          case 'recusada': requisicoesPorStatus.recusadas++; break;
-          case 'concluida': requisicoesPorStatus.concluidas++; break;
-          case 'cancelada': requisicoesPorStatus.canceladas++; break;
-        }
-      });
-    });
+    const s = (st: string) => porStatus.find(g => g.status === st)?._count._all ?? 0;
+    const r = (st: string) => reqPorStatus.find(g => g.status === st)?._count._all ?? 0;
+    const totalServicos = porStatus.reduce((sum, g) => sum + g._count._all, 0);
+    const totalRequisicoes = reqPorStatus.reduce((sum, g) => sum + g._count._all, 0);
 
     return {
       total_servicos: totalServicos,
-      servicos_ativos: servicosAtivos,
-      servicos_inativos: servicosInativos,
-      servicos_pausados: servicosPausados,
+      servicos_ativos: s('ativo'),
+      servicos_inativos: s('inativo'),
+      servicos_pausados: s('pausado'),
       total_requisicoes: totalRequisicoes,
-      valor_medio: Number(valorMedio.toFixed(2)),
-      requisicoes_por_status: requisicoesPorStatus
+      valor_medio: Number(Number(media._avg.valor ?? 0).toFixed(2)),
+      requisicoes_por_status: {
+        pendentes: r('pendente'),
+        aceitas: r('aceita'),
+        recusadas: r('recusada'),
+        concluidas: r('concluida'),
+        canceladas: r('cancelada')
+      }
     };
   }
 }

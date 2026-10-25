@@ -46,12 +46,20 @@ export class PortfolioRepository {
     return result.count;
   }
 
-  async reorder(_: string, ids: string[]): Promise<void> {
-    for (let i = 0; i < ids.length; i++) {
-      await this.prisma.portfolio.update({
-        where: { id_portfolio: ids[i] },
-        data: { ordem: i }
-      });
-    }
+  /** Reordena apenas imagens do próprio fazedor (ids de terceiros são ignorados). Devolve nº actualizado. */
+  async reorder(id_fazedor: string, ids: string[]): Promise<number> {
+    const results = await this.prisma.$transaction(
+      ids.map((id_portfolio, i) =>
+        this.prisma.portfolio.updateMany({
+          where: { id_portfolio, id_fazedor },
+          data: { ordem: i }
+        })
+      )
+    );
+    return results.reduce((sum, r) => sum + r.count, 0);
+  }
+
+  async findOneByFazedor(id_portfolio: string, id_fazedor: string): Promise<Portfolio | null> {
+    return await this.prisma.portfolio.findFirst({ where: { id_portfolio, id_fazedor } });
   }
 }

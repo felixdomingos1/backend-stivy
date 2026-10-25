@@ -1,8 +1,14 @@
 import { Prisma, PrismaClient, Usuario } from '@prisma/client';
 import prisma from '../config/database';
-import { IUserRepository } from '../interfaces/IUserRepository';
+import { usuarioPrivadoSelect, usuarioPublicoSelect, UsuarioPrivado, UsuarioPublico } from '../utils/prisma-selects';
 
-export class UserRepository implements IUserRepository {
+/**
+ * Repositório de utilizadores.
+ * - findById / findPublicById / findAllPaginated: NUNCA devolvem senha_hash, códigos OTP/reset,
+ *   tentativas ou reset_token*.
+ * - findByEmail / findByIdComplete: registo completo — uso EXCLUSIVO interno (auth), nunca enviar ao cliente.
+ */
+export class UserRepository {
   private prisma: PrismaClient;
 
   constructor() {
@@ -21,31 +27,26 @@ export class UserRepository implements IUserRepository {
     });
   }
 
-  async findById(id: string): Promise<Omit<Usuario, 'senha_hash' | 'reset_token' | 'reset_token_expira'> | null> {
+  async findById(id: string): Promise<UsuarioPrivado | null> {
     return await this.prisma.usuario.findUnique({
       where: { id_usuario: id },
-      select: {
-        id_usuario: true,
-        nome: true,
-        email: true,
-        telefone: true,
-        tipo: true,
-        foto_perfil: true,
-        data_cadastro: true,
-        status: true,
-        ultimo_acesso: true,
-        email_verificado: true,
-        email_verification_code: true,
-        email_verification_expira: true,
-        verification_attempts: true,
-        reset_password_attempts: true,
-        reset_password_code: true,
-        reset_password_expira: true,
-        banner_url:true,
-        banner_public_id:true,
-        foto_perfil_public_id:true,
-      }
+      select: usuarioPrivadoSelect
     });
+  }
+
+  async findPublicById(id: string): Promise<UsuarioPublico | null> {
+    return await this.prisma.usuario.findUnique({
+      where: { id_usuario: id },
+      select: usuarioPublicoSelect
+    });
+  }
+
+  async findFotoPerfilPublicId(id: string): Promise<string | null> {
+    const u = await this.prisma.usuario.findUnique({
+      where: { id_usuario: id },
+      select: { foto_perfil_public_id: true }
+    });
+    return u?.foto_perfil_public_id ?? null;
   }
 
   async create(data: Prisma.UsuarioCreateInput): Promise<Usuario> {
@@ -82,7 +83,10 @@ export class UserRepository implements IUserRepository {
       data: {
         senha_hash: hashedPassword,
         reset_token: null,
-        reset_token_expira: null
+        reset_token_expira: null,
+        reset_password_code: null,
+        reset_password_expira: null,
+        reset_password_attempts: 0
       }
     });
   }
@@ -122,18 +126,17 @@ export class UserRepository implements IUserRepository {
   }
 
 
-  async updateUser(id: string, data: any): Promise<Usuario> {
+  async updateUser(id: string, data: any): Promise<UsuarioPrivado> {
+    // Allowlist: tipo/status NUNCA são alterados por esta via (apenas admin, com métodos próprios)
     const allowedFields = [
       'nome',
       'telefone',
-      'tipo',
-      'status',
       'banner_url',
       'banner_public_id'
     ];
 
     const filteredData = Object.keys(data)
-      .filter(key => allowedFields.includes(key))
+      .filter(key => allowedFields.includes(key) && data[key] !== undefined)
       .reduce((obj, key) => {
         obj[key] = data[key];
         return obj;
@@ -141,7 +144,8 @@ export class UserRepository implements IUserRepository {
 
     return await this.prisma.usuario.update({
       where: { id_usuario: id },
-      data: filteredData
+      data: filteredData,
+      select: usuarioPrivadoSelect
     });
   }
 
@@ -172,11 +176,7 @@ export class UserRepository implements IUserRepository {
         fazedor: {
           include: {
             usuario: {
-              select: {
-                nome: true,
-                email: true,
-                foto_perfil: true
-              }
+              select: usuarioPublicoSelect
             }
           }
         }
@@ -226,15 +226,17 @@ export class UserRepository implements IUserRepository {
     });
   }
 
-  async incrementResetPasswordAttempts(email: string): Promise<void> {
-    await this.prisma.usuario.update({
+  async incrementResetPasswordAttempts(email: string): Promise<number> {
+    const u = await this.prisma.usuario.update({
       where: { email },
       data: {
         reset_password_attempts: {
           increment: 1
         }
-      }
+      },
+      select: { reset_password_attempts: true }
     });
+    return u.reset_password_attempts;
   }
 
   async clearPasswordResetOTP(email: string): Promise<void> {
@@ -248,19 +250,25 @@ export class UserRepository implements IUserRepository {
     });
   }
 
-  async findAll(): Promise<any[]> {
-    return this.prisma.usuario.findMany({
-      include: {
-        fazedor: true,
-        favoritos: true,
-        notificacoes: true,
-        requisicoes: true,
-        eventosParticipados: true,
-        avaliacoesFeitas: true,
-        stories:true,
-        _count:true
-      }
-    });
+  async findAllPaginated(page: number, limit: number): Promise<{ items: any[]; total: number }> {
+    const [items, total] = await Promise.all([
+      this.prisma.usuario.findMany({
+        select: {
+          ...usuarioPrivadoSelect,
+          fazedor: {
+            select: { id_fazedor: true, tipo_fazedor: true, status_aprovacao: true }
+          },
+          _count: {
+            select: { seguidores: true, seguindo: true, favoritos: true, stories: true }
+          }
+        },
+        orderBy: { data_cadastro: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit
+      }),
+      this.prisma.usuario.count()
+    ]);
+    return { items, total };
   }
 
   async followUser(seguidorId: string, seguidoId: string): Promise<void> {
@@ -300,12 +308,7 @@ export class UserRepository implements IUserRepository {
       where: { id_seguido: userId },
       include: {
         seguidor: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            foto_perfil: true,
-          },
+          select: usuarioPublicoSelect,
         },
       },
       orderBy: { data_inicio: 'desc' },
@@ -317,12 +320,7 @@ export class UserRepository implements IUserRepository {
       where: { id_seguidor_usuario: userId },
       include: {
         seguido: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            foto_perfil: true,
-          },
+          select: usuarioPublicoSelect,
         },
       },
       orderBy: { data_inicio: 'desc' },

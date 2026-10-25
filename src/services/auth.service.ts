@@ -3,11 +3,20 @@ import { RegisterUserDto, LoginDto, AuthResponseDto, VerifyEmailDto, VerifyPassw
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { hashSenha, compararSenha } from '../utils/bcrypt';
-import { gerarToken, generateRefreshToken } from '../utils/jwt';
+import { gerarToken, generateRefreshToken, revokeAllUserTokens } from '../utils/jwt';
 import logger from '../utils/logger';
-import { ValidationError, AuthenticationError, AuthorizationError } from '../utils/errors';
+import { ValidationError, AuthenticationError } from '../utils/errors';
 import { EmailService } from './email.service';
 import { OTPService } from './otp.service';
+import { formatarFazedorPrivado } from './user.service';
+
+const MAX_TENTATIVAS_VERIFICACAO = 5;
+const MAX_TENTATIVAS_RESET = 5;
+/** Respostas constantes (evitam enumeração de utilizadores). */
+export const MSG_RECUPERACAO_ENVIADA = 'Se o email estiver registado, enviámos um código de verificação.';
+export const MSG_CODIGO_INVALIDO = 'Código inválido ou expirado. Solicite um novo código.';
+// Hash bcrypt fictício para equalizar o tempo de resposta quando o email não existe
+const HASH_FICTICIO = '$2b$10$aJPGAv3fk64rz63pR.iVf.gDKf.kpVy0awSy7Fy4DLxiFkU91LfY2';
 
 export class AuthService implements IAuthService {
   private emailService: EmailService;
@@ -29,7 +38,7 @@ export class AuthService implements IAuthService {
 
     if (dto.tipo === 'fazedor') {
       if (!dto.tipo_fazedor) {
-        throw new AuthorizationError('Precisas enviar o tipo de fazedor')
+        throw new ValidationError('Precisas enviar o tipo de fazedor');
       }
 
     }
@@ -62,7 +71,7 @@ export class AuthService implements IAuthService {
 
     try {
       await this.emailService.sendVerificationEmail(dto.email, dto.nome, otpCode);
-      logger.info(`Email de verificação enviado para: ${dto.email}`);
+      logger.info(`Email de verificação enviado para utilizador ${user.id_usuario}`);
     } catch (error) {
       logger.error('Falha ao enviar email de verificação:', error);
     }
@@ -94,7 +103,8 @@ export class AuthService implements IAuthService {
   }
 
   async verifyEmail(dto: VerifyEmailDto): Promise<AuthResponseDto> {
-    const user = await this.userRepository.findById(dto.userId);
+    // Registo completo (precisa do código e tentativas) — uso interno apenas
+    const user = await this.userRepository.findByIdComplete(dto.userId);
     if (!user) {
       throw new ValidationError('Usuário não encontrado');
     }
@@ -103,7 +113,7 @@ export class AuthService implements IAuthService {
       throw new ValidationError('Email já verificado');
     }
 
-    const maxAttempts = 5;
+    const maxAttempts = MAX_TENTATIVAS_VERIFICACAO;
     const attempts = user.verification_attempts || 0;
 
     if (attempts >= maxAttempts) {
@@ -136,8 +146,9 @@ export class AuthService implements IAuthService {
       tipo: user.tipo,
       isVerified: true
     });
+    const refreshToken = await generateRefreshToken(user.id_usuario);
 
-    logger.info(`Email verificado para usuário: ${user.email}`);
+    logger.info(`Email verificado para usuário: ${user.id_usuario}`);
 
     const fazedor = await this.fazedorRepository.findFazedorByUserId(user.id_usuario);
 
@@ -145,6 +156,8 @@ export class AuthService implements IAuthService {
       success: true,
       message: 'Email verificado com sucesso! Sua conta está ativa.',
       token,
+      refreshToken,
+      isVerified: true,
       usuario: {
         id: user.id_usuario,
         nome: user.nome,
@@ -162,7 +175,8 @@ export class AuthService implements IAuthService {
   async resendVerificationCode(email: string): Promise<{ message: string }> {
     const user = await this.userRepository.findByEmail(email);
     if (!user) {
-      throw new ValidationError('Usuário não encontrado');
+      // Resposta constante: não revelar se o email existe
+      return { message: 'Se o email estiver registado e por verificar, enviámos um novo código.' };
     }
 
     if (user.email_verificado) {
@@ -176,7 +190,7 @@ export class AuthService implements IAuthService {
 
     try {
       await this.emailService.sendVerificationEmail(user.email, user.nome, newOTP);
-      logger.info(`Novo código de verificação enviado para: ${user.email}`);
+      logger.info(`Novo código de verificação enviado para utilizador ${user.id_usuario}`);
     } catch (error) {
       logger.error('Falha ao reenviar email de verificação:', error);
       throw new Error('Falha ao enviar email. Tente novamente.');
@@ -190,6 +204,7 @@ export class AuthService implements IAuthService {
   async login(dto: LoginDto): Promise<AuthResponseDto> {
     const user = await this.userRepository.findByEmail(dto.email);
     if (!user) {
+      await compararSenha(dto.senha, HASH_FICTICIO).catch(() => false);
       throw new AuthenticationError('Email ou senha inválidos');
     }
 
@@ -202,9 +217,8 @@ export class AuthService implements IAuthService {
       throw new AuthenticationError('Usuário bloqueado ou inativo');
     }
 
-    // if (!user.email_verificado) {
-    //   throw new AuthenticationError('Email não verificado. Verifique sua caixa de entrada.');
-    // }
+    // Login permitido com email por verificar: devolvemos `isVerified` para o app pedir a verificação.
+    const isVerified = !!user.email_verificado;
 
     await this.userRepository.updateLastAccess(user.id_usuario);
 
@@ -214,18 +228,20 @@ export class AuthService implements IAuthService {
       id: user.id_usuario,
       email: user.email,
       tipo: user.tipo,
-      isVerified: true
+      isVerified
     });
 
     const refreshToken = await generateRefreshToken(user.id_usuario);
 
-    logger.info(`Usuário logado: ${user.email}`);
+    logger.info(`Usuário logado: ${user.id_usuario}`);
 
     return {
       success: true,
       message: 'Login realizado com sucesso',
       token,
       refreshToken,
+      isVerified,
+      requiresVerification: !isVerified,
       usuario: {
         id: user.id_usuario,
         nome: user.nome,
@@ -233,7 +249,7 @@ export class AuthService implements IAuthService {
         telefone: user.telefone || undefined,
         tipo: user.tipo,
         foto_perfil: user.foto_perfil || undefined,
-        email_verificado: true,
+        email_verificado: isVerified,
         status_aprovacao: fazedor?.status_aprovacao || undefined,
         tipo_fazedor: fazedor?.tipo_fazedor || undefined
       }
@@ -248,56 +264,61 @@ export class AuthService implements IAuthService {
 
     const fazedor = await this.fazedorRepository.findFazedorWithDetails(userId);
 
-    return { usuario: user, fazedor };
+    return { usuario: { id: user.id_usuario, ...user }, fazedor: formatarFazedorPrivado(fazedor) };
   }
 
-  async requestPasswordReset(email: string): Promise<{ message: string}> {
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
     const user = await this.userRepository.findByEmail(email);
-    if (!user) {
-      throw new ValidationError('Email não encontrado');
-    }
-    const otpCode = this.otpService.generateOTP();
-    const otpExpiration = this.otpService.getExpirationDate();
-    await this.userRepository.updatePasswordResetOTP(email, otpCode, otpExpiration);
-    try {
-      await this.emailService.sendPasswordResetOTPEmail(user.email, user.nome, otpCode);
-      logger.info(`Email de recuperação com OTP enviado para: ${email}`);
-    } catch (error) {
-      logger.error('Falha ao enviar email de recuperação:', error);
-      throw new Error('Falha ao enviar email de recuperação');
+
+    // Resposta SEMPRE igual, exista ou não o email (anti-enumeração)
+    if (!user || user.status !== 'ativo') {
+      logger.info('Pedido de recuperação para email inexistente/inactivo');
+      return { message: MSG_RECUPERACAO_ENVIADA };
     }
 
-    return {
-      message: 'Código de verificação enviado para seu email!'
-    };
+    const otpCode = this.otpService.generateOTP();
+    const otpExpiration = this.otpService.getExpirationDate();
+    await this.userRepository.updatePasswordResetOTP(user.email, otpCode, otpExpiration);
+    try {
+      await this.emailService.sendPasswordResetOTPEmail(user.email, user.nome, otpCode);
+      logger.info(`Email de recuperação com OTP enviado para utilizador ${user.id_usuario}`);
+    } catch (error) {
+      // Não propagar: uma falha diferente revelaria que o email existe
+      logger.error('Falha ao enviar email de recuperação:', error);
+    }
+
+    return { message: MSG_RECUPERACAO_ENVIADA };
+  }
+
+  /**
+   * Valida o código de recuperação, contando tentativas (máx. 5). Ao atingir o máximo o código é invalidado.
+   * Lança sempre a mesma mensagem (MSG_CODIGO_INVALIDO) para email inexistente, código errado ou expirado.
+   */
+  private async validarCodigoRecuperacao(email: string, codigo: string) {
+    const user = await this.userRepository.findByEmail(email);
+    if (!user || !user.reset_password_code || !user.reset_password_expira) {
+      throw new ValidationError(MSG_CODIGO_INVALIDO);
+    }
+
+    if ((user.reset_password_attempts || 0) >= MAX_TENTATIVAS_RESET) {
+      await this.userRepository.clearPasswordResetOTP(user.email);
+      throw new ValidationError(MSG_CODIGO_INVALIDO);
+    }
+
+    const isValid = this.otpService.isOTPValid(codigo, user.reset_password_code, user.reset_password_expira);
+    if (!isValid) {
+      const tentativas = await this.userRepository.incrementResetPasswordAttempts(user.email);
+      if ((tentativas ?? 0) >= MAX_TENTATIVAS_RESET) {
+        await this.userRepository.clearPasswordResetOTP(user.email);
+      }
+      throw new ValidationError(MSG_CODIGO_INVALIDO);
+    }
+
+    return user;
   }
 
   async verifyPasswordResetOTP(dto: VerifyPasswordResetOtpDto): Promise<{ isValid: boolean; message: string }> {
-    const user = await this.userRepository.findByEmail(dto.email);
-    if (!user) {
-      throw new ValidationError('Email não encontrado');
-    }
-
-    const maxAttempts = 3;
-    const attempts = user.reset_password_attempts || 0;
-
-    if (attempts >= maxAttempts) {
-      throw new ValidationError('Número máximo de tentativas excedido. Solicite um novo código.');
-    }
-
-    const isValid = this.otpService.isOTPValid(
-      dto.codigo,
-      user.reset_password_code,
-      user.reset_password_expira
-    );
-
-    if (!isValid) {
-      await this.userRepository.incrementResetPasswordAttempts(dto.email);
-      const remainingAttempts = maxAttempts - (attempts + 1);
-      throw new ValidationError(`Código inválido ou expirado. Você tem ${remainingAttempts} tentativa(s) restante(s).`);
-    }
-
-    logger.info(`OTP de recuperação verificado para: ${dto.email}`);
+    await this.validarCodigoRecuperacao(dto.email, dto.codigo);
 
     return {
       isValid: true,
@@ -306,18 +327,17 @@ export class AuthService implements IAuthService {
   }
 
   async resetPasswordWithOTP(dto: ResetPasswordWithOtpDto): Promise<{ message: string }> {
-    const user = await this.userRepository.findByPasswordResetOTP(dto.email, dto.codigo);
-
-    if (!user) {
-      throw new ValidationError('Código inválido ou expirado. Solicite um novo código.');
-    }
+    const user = await this.validarCodigoRecuperacao(dto.email, dto.codigo);
 
     const hashedPassword = await hashSenha(dto.nova_senha);
 
+    // updatePassword também limpa o código/tentativas de recuperação
     await this.userRepository.updatePassword(user.id_usuario, hashedPassword);
-    await this.userRepository.clearPasswordResetOTP(dto.email);
+    await this.userRepository.clearPasswordResetOTP(user.email);
+    // Terminar todas as sessões existentes
+    await revokeAllUserTokens(user.id_usuario);
 
-    logger.info(`Senha redefinida com OTP para usuário: ${user.email}`);
+    logger.info(`Senha redefinida com OTP para utilizador ${user.id_usuario}`);
 
     return {
       message: 'Senha redefinida com sucesso! Faça login com sua nova senha.'

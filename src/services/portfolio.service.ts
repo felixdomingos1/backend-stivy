@@ -1,6 +1,6 @@
 import { PortfolioRepository } from '../repositories/portfolio.repository';
 import { cloudinaryService } from './cloudinary.service';
-import { NotFoundError } from '../utils/errors';
+import { NotFoundError, ValidationError } from '../utils/errors';
 import logger from '../utils/logger';
 
 export class PortfolioService {
@@ -61,28 +61,38 @@ export class PortfolioService {
   }
 
   async removerImagem(id_portfolio: string, id_fazedor: string): Promise<void> {
-    const portfolio = await this.portfolioRepository.findByFazedor(id_fazedor);
-    const imagem = portfolio.find(p => p.id_portfolio === id_portfolio);
+    const imagem = await this.portfolioRepository.findOneByFazedor(id_portfolio, id_fazedor);
 
     if (!imagem) {
       throw new NotFoundError('Imagem não encontrada');
     }
 
-    await cloudinaryService.deleteFile(imagem.imagem_public_id);
     await this.portfolioRepository.delete(id_portfolio);
+    cloudinaryService.deleteFile(imagem.imagem_public_id)
+      .catch(err => logger.warn(`Falha ao apagar imagem ${id_portfolio} do Cloudinary:`, err?.message ?? err));
     logger.info(`Imagem removida do portfolio: ${id_portfolio}`);
   }
 
   async reordenarImagens(id_fazedor: string, ids: string[]): Promise<void> {
-    await this.portfolioRepository.reorder(id_fazedor, ids);
+    if (ids.some(id => typeof id !== 'string')) {
+      throw new ValidationError('Lista de IDs inválida');
+    }
+    const count = await this.portfolioRepository.reorder(id_fazedor, ids.slice(0, 200));
+    if (count !== ids.length) {
+      throw new ValidationError('Algumas imagens não pertencem ao seu portfolio');
+    }
   }
 
   async atualizarImagem(
     id_portfolio: string,
-    _id_fazedor: string,
+    id_fazedor: string,
     titulo?: string,
     descricao?: string
   ): Promise<any> {
+    const imagem = await this.portfolioRepository.findOneByFazedor(id_portfolio, id_fazedor);
+    if (!imagem) {
+      throw new NotFoundError('Imagem não encontrada');
+    }
     return await this.portfolioRepository.update(id_portfolio, {
       titulo,
       descricao

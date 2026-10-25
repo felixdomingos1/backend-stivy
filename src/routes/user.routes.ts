@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controller/user.controller';
-import { autenticar } from '../middleware/auth.middleware';
+import { autenticar, verificarAdmin } from '../middleware/auth.middleware';
 import { favoritoIdValidation, updatePasswordValidation, updateProfileValidation } from '../validations/auth.validation';
 import { handleUploadError, uploadFotoPerfil } from '../middleware/upload.middleware';
 
@@ -8,9 +8,10 @@ const router = Router();
 const userController = new UserController();
 
 
-router.get('/todos', userController.pegarTodos.bind(userController));
-
 router.use(autenticar);
+
+// Apenas administradores; paginado (?page=&limit=, limit máx. 100)
+router.get('/todos', verificarAdmin, userController.pegarTodos.bind(userController));
 router.get('/perfil', userController.getPerfil.bind(userController));
 router.put('/perfil', updateProfileValidation, userController.atualizarPerfil.bind(userController));
 router.put('/senha', updatePasswordValidation, userController.atualizarSenha.bind(userController));

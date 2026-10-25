@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { autenticar } from '../middleware/auth.middleware';
+import multer from 'multer';
+import { autenticar, verificarFazedor } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validation.middleware';
 import { cacheListResponse, cacheDetailResponse, invalidateOnWrite } from '../middleware/cache.middleware';
 import {
@@ -10,13 +11,36 @@ import {
   getFazedorByIdValidation,
   createAvaliacaoValidation,
   listAvaliacoesValidation,
-  searchValidation
+  searchValidation,
+  denunciarServicoValidation
 } from '../validations/fashion.validation';
 import { FashionController } from '../controller/fashion.controller';
-import { handleUploadError, uploadMultiple, uploadSingle, uploadFotoPerfil } from '../middleware/upload.middleware';
+import { handleUploadError, uploadMultiple, uploadSingle } from '../middleware/upload.middleware';
+import { autenticacaoOpcional } from '../services/authorization.service';
 
 const router = Router();
 const fashionController = new FashionController();
+
+// Padrões de invalidação (formato documentado em middleware/cache.middleware.ts)
+const SERVICOS_CACHE = '/api/v1/fashion/servicos*';
+const FAZEDORES_CACHE = '/api/v1/fashion/fazedores*';
+const MODELOS_CACHE = '/api/v1/fashion/modelos*';
+
+// Upload de imagens dos modelos: `foto` | `foto_perfil` | `imagem` (1) e `fotos` (até 10)
+const IMAGE_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const uploadModelo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10), files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (IMAGE_MIMES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Tipo de arquivo não suportado. Use JPEG, PNG, WEBP ou GIF.'));
+  }
+}).fields([
+  { name: 'foto', maxCount: 1 },
+  { name: 'foto_perfil', maxCount: 1 },
+  { name: 'imagem', maxCount: 1 },
+  { name: 'fotos', maxCount: 10 }
+]);
 
 router.get('/pesquisa',
   searchValidation,
@@ -24,7 +48,9 @@ router.get('/pesquisa',
   fashionController.search.bind(fashionController)
 );
 
+// ---------------- Serviços (publicações) ----------------
 router.get('/servicos',
+  autenticacaoOpcional,
   listServicosValidation,
   validate,
   cacheListResponse(60),
@@ -32,7 +58,8 @@ router.get('/servicos',
 );
 
 router.get('/servicos/:id',
-  cacheDetailResponse(300),
+  autenticacaoOpcional,
+  cacheDetailResponse(120),
   fashionController.buscarServicoPorId.bind(fashionController)
 );
 
@@ -42,7 +69,7 @@ router.post('/servicos',
   handleUploadError,
   createServicoValidation,
   validate,
-  invalidateOnWrite(['list:*/api/fashion/servicos*']),
+  invalidateOnWrite([SERVICOS_CACHE, FAZEDORES_CACHE]),
   fashionController.criarServico.bind(fashionController)
 );
 
@@ -52,43 +79,21 @@ router.put('/servicos/:id',
   handleUploadError,
   updateServicoValidation,
   validate,
-  invalidateOnWrite(['list:*/api/fashion/servicos*', 'detail:*/api/fashion/servicos/*']),
+  invalidateOnWrite([SERVICOS_CACHE, FAZEDORES_CACHE]),
   fashionController.atualizarServico.bind(fashionController)
 );
 
 router.delete('/servicos/:id',
   autenticar,
-  validate,
-  invalidateOnWrite(['list:*/api/fashion/servicos*', 'detail:*/api/fashion/servicos/*']),
+  invalidateOnWrite([SERVICOS_CACHE, FAZEDORES_CACHE]),
   fashionController.removerServico.bind(fashionController)
-);
-
-router.post('/portfolio/imagens',
-  autenticar,
-  uploadMultiple,
-  handleUploadError,
-  fashionController.adicionarPortfolio.bind(fashionController)
-);
-
-router.get('/portfolio',
-  autenticar,
-  fashionController.listarPortfolio.bind(fashionController)
-);
-
-router.delete('/portfolio/:id',
-  autenticar,
-  fashionController.removerImagemPortfolio.bind(fashionController)
-);
-
-router.put('/portfolio/reordenar',
-  autenticar,
-  fashionController.reordenarPortfolio.bind(fashionController)
 );
 
 router.post('/servicos/:id/imagens',
   autenticar,
   uploadMultiple,
   handleUploadError,
+  invalidateOnWrite([SERVICOS_CACHE]),
   fashionController.adicionarImagensServico.bind(fashionController)
 );
 
@@ -98,14 +103,43 @@ router.get('/servicos/:id/imagens',
 
 router.delete('/servicos/imagens/:id_imagem',
   autenticar,
+  invalidateOnWrite([SERVICOS_CACHE]),
   fashionController.removerImagemServico.bind(fashionController)
 );
 
 router.put('/servicos/:id/imagens/principal/:id_imagem',
   autenticar,
+  invalidateOnWrite([SERVICOS_CACHE]),
   fashionController.definirImagemPrincipal.bind(fashionController)
 );
 
+// ---------------- Portfolio do fazedor ----------------
+router.post('/portfolio/imagens',
+  autenticar,
+  uploadMultiple,
+  handleUploadError,
+  invalidateOnWrite([FAZEDORES_CACHE]),
+  fashionController.adicionarPortfolio.bind(fashionController)
+);
+
+router.get('/portfolio',
+  autenticar,
+  fashionController.listarPortfolio.bind(fashionController)
+);
+
+router.put('/portfolio/reordenar',
+  autenticar,
+  invalidateOnWrite([FAZEDORES_CACHE]),
+  fashionController.reordenarPortfolio.bind(fashionController)
+);
+
+router.delete('/portfolio/:id',
+  autenticar,
+  invalidateOnWrite([FAZEDORES_CACHE]),
+  fashionController.removerImagemPortfolio.bind(fashionController)
+);
+
+// ---------------- Fazedores ----------------
 router.get('/fazedores',
   listFazedoresValidation,
   validate,
@@ -113,10 +147,16 @@ router.get('/fazedores',
   fashionController.listarFazedores.bind(fashionController)
 );
 
+// Antes de /fazedores/:id
+router.get('/fazedores/proximos',
+  cacheListResponse(60),
+  fashionController.listarFazedoresProximos.bind(fashionController)
+);
+
 router.get('/fazedores/:id',
   getFazedorByIdValidation,
   validate,
-  cacheDetailResponse(300),
+  cacheDetailResponse(120),
   fashionController.buscarFazedorPorId.bind(fashionController)
 );
 
@@ -139,7 +179,7 @@ router.post('/avaliacoes',
   autenticar,
   createAvaliacaoValidation,
   validate,
-  invalidateOnWrite(['detail:*/api/fashion/fazedores/*', 'list:*/api/fashion/fazedores/*/avaliacoes*']),
+  invalidateOnWrite([FAZEDORES_CACHE]),
   fashionController.avaliarFazedor.bind(fashionController)
 );
 
@@ -153,49 +193,73 @@ router.get('/tipos/fazedores',
   fashionController.getTiposFazedores.bind(fashionController)
 );
 
+// ---------------- Modelos (agência) ----------------
+router.get('/modelos',
+  cacheListResponse(60),
+  fashionController.listarModelosPublicos.bind(fashionController)
+);
+
+// Pessoal: sem cache. Antes de /modelos/:id
+router.get('/modelos/minhas',
+  autenticar,
+  verificarFazedor,
+  fashionController.listarMeusModelos.bind(fashionController)
+);
+
 router.post('/modelos/criar-com-foto',
   autenticar,
-  uploadFotoPerfil,
+  uploadModelo,
   handleUploadError,
+  invalidateOnWrite([MODELOS_CACHE, FAZEDORES_CACHE]),
   fashionController.criarModeloComFoto.bind(fashionController)
 );
 
 router.post('/modelos',
   autenticar,
-  validate,
+  invalidateOnWrite([MODELOS_CACHE, FAZEDORES_CACHE]),
   fashionController.criarModelo.bind(fashionController)
 );
 
-router.get('/modelos',
-  autenticar,
-  fashionController.listarModelosDaAgencia.bind(fashionController)
-);
-
 router.get('/modelos/:id',
+  autenticacaoOpcional,
   fashionController.buscarModeloPorId.bind(fashionController)
 );
 
 router.put('/modelos/:id',
   autenticar,
-  validate,
+  invalidateOnWrite([MODELOS_CACHE, FAZEDORES_CACHE]),
   fashionController.atualizarModelo.bind(fashionController)
+);
+
+router.patch('/modelos/:id/status',
+  autenticar,
+  invalidateOnWrite([MODELOS_CACHE, FAZEDORES_CACHE]),
+  fashionController.atualizarStatusModelo.bind(fashionController)
 );
 
 router.delete('/modelos/:id',
   autenticar,
+  invalidateOnWrite([MODELOS_CACHE, FAZEDORES_CACHE]),
   fashionController.removerModelo.bind(fashionController)
 );
 
 router.post('/modelos/:id/fotos',
   autenticar,
-  uploadSingle,
+  uploadModelo,
   handleUploadError,
+  invalidateOnWrite([MODELOS_CACHE]),
   fashionController.adicionarFotoModelo.bind(fashionController)
 );
 
+router.delete('/modelos/:id/fotos/:id_foto',
+  autenticar,
+  invalidateOnWrite([MODELOS_CACHE]),
+  fashionController.removerFotoModelo.bind(fashionController)
+);
+
+// ---------------- Comentários / reações / partilhas ----------------
 router.post('/servicos/:id/comentarios',
   autenticar,
-  validate,
   fashionController.comentarServico.bind(fashionController)
 );
 
@@ -229,7 +293,7 @@ router.delete('/servicos/:id/reacoes',
 );
 
 router.get('/servicos/:id/reacoes',
-  autenticar,
+  autenticacaoOpcional,
   fashionController.getReacoesServico.bind(fashionController)
 );
 
@@ -240,6 +304,13 @@ router.post('/servicos/:id/compartilhar',
 
 router.get('/servicos/:id/compartilhamentos',
   fashionController.getCompartilhamentosServico.bind(fashionController)
+);
+
+router.post('/servicos/:id/denuncias',
+  autenticar,
+  denunciarServicoValidation,
+  validate,
+  fashionController.denunciarServico.bind(fashionController)
 );
 
 export default router;

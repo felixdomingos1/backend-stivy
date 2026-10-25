@@ -1,8 +1,22 @@
-import { Server as SocketServer } from 'socket.io';
 import { ChatRepository, CreateConversaData } from '../repositories/chat.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { ForbiddenError } from './authorization.service';
+import { getIO, emitToUser, SocketEmitter } from '../config/socket';
 import logger from '../utils/logger';
+
+export const CHAT_EVENTS = {
+  NEW_MESSAGE: 'chat:newMessage',
+  READ: 'chat:read',
+} as const;
+
+type Participante = {
+  id_usuario: string;
+  ultima_leitura: Date | null;
+  usuario: { id_usuario: string; nome: string; foto_perfil: string | null; tipo?: string; fazedor?: { id_fazedor: string } | null };
+};
+
+export type RelacaoContato = 'seguindo' | 'seguidor' | 'cliente' | 'sugestao';
 
 export class ChatService {
   constructor(
@@ -10,18 +24,69 @@ export class ChatService {
     private notificacaoRepository: NotificacaoRepository
   ) {}
 
+  private formatParticipantes(participantes: Participante[]) {
+    return participantes.map((p) => ({
+      id_usuario: p.usuario.id_usuario,
+      nome: p.usuario.nome,
+      foto_perfil: p.usuario.foto_perfil,
+      tipo: p.usuario.tipo ?? null,
+      id_fazedor: p.usuario.fazedor?.id_fazedor ?? null,
+    }));
+  }
+
+  private formatConversa(c: any, nao_lidas = 0) {
+    return {
+      id_conversa: c.id_conversa,
+      tipo: c.tipo,
+      titulo: c.titulo,
+      criada_em: c.criada_em,
+      atualizada_em: c.atualizada_em,
+      participantes: this.formatParticipantes(c.participantes || []),
+      ultima_mensagem: c.mensagens?.[0] || null,
+      nao_lidas,
+    };
+  }
+
+  private async getConversaComoParticipante(id_conversa: string, id_usuario: string) {
+    const conversa = await this.chatRepository.findConversationById(id_conversa);
+
+    if (!conversa) {
+      throw new NotFoundError('Conversa não encontrada');
+    }
+
+    const isParticipante = conversa.participantes.some((p) => p.id_usuario === id_usuario);
+    if (!isParticipante) {
+      throw new ForbiddenError('Acesso negado: você não é participante desta conversa');
+    }
+
+    return conversa;
+  }
+
+  /** Emite para a sala da conversa e para a sala pessoal de cada participante (sem duplicados). */
+  private emitParaConversa(id_conversa: string, participantes: string[], event: string, payload: any) {
+    const io = getIO();
+    if (!io) return;
+    try {
+      io.to([`chat:${id_conversa}`, ...participantes.map((id) => `user:${id}`)]).emit(event, payload);
+    } catch (error) {
+      logger.warn(`[CHAT] Falha ao emitir ${event}:`, error);
+    }
+  }
+
   async listarConversas(id_usuario: string) {
     try {
       const conversas = await this.chatRepository.findConversationsByUser(id_usuario);
-      return conversas.map((c) => ({
-        id_conversa: c.id_conversa,
-        tipo: c.tipo,
-        titulo: c.titulo,
-        criada_em: c.criada_em,
-        atualizada_em: c.atualizada_em,
-        ultima_mensagem: c.mensagens[0] || null,
-        participantes: c.participantes,
-      }));
+      return await Promise.all(
+        conversas.map(async (c) => {
+          const eu = c.participantes.find((p) => p.id_usuario === id_usuario);
+          const naoLidas = await this.chatRepository.countUnread(
+            c.id_conversa,
+            id_usuario,
+            eu?.ultima_leitura ?? null
+          );
+          return this.formatConversa(c, naoLidas);
+        })
+      );
     } catch (error: any) {
       logger.error('Erro ao listar conversas:', error);
       throw error;
@@ -30,121 +95,131 @@ export class ChatService {
 
   async criarConversa(data: CreateConversaData, id_usuario_criador: string) {
     try {
-      const participantes = [...new Set([id_usuario_criador, ...data.participantes])];
+      const tipo = data.tipo || 'direct';
+      const participantes = [...new Set([id_usuario_criador, ...(data.participantes || [])])];
 
       if (participantes.length < 2) {
         throw new ValidationError('Conversa deve ter pelo menos 2 participantes');
       }
 
-      if (data.tipo === 'direct' && participantes.length > 2) {
+      if (tipo === 'direct' && participantes.length > 2) {
         throw new ValidationError('Conversa direct deve ter exatamente 2 participantes');
       }
 
-      if (data.tipo === 'direct') {
-        const existente = await this.chatRepository.findExistingDirectConversation(participantes);
-        if (existente) {
-          return existente;
-        }
+      if (tipo === 'grupo' && !data.titulo) {
+        throw new ValidationError('Conversa em grupo deve ter um título');
       }
 
-      if (data.tipo === 'grupo' && !data.titulo) {
-        throw new ValidationError('Conversa em grupo deve ter um título');
+      const existentes = await this.chatRepository.countExistingUsers(participantes);
+      if (existentes !== participantes.length) {
+        throw new NotFoundError('Um ou mais participantes não existem');
+      }
+
+      if (tipo === 'direct') {
+        const existente = await this.chatRepository.findExistingDirectConversation(participantes);
+        if (existente) {
+          return { ...this.formatConversa(existente), reutilizada: true };
+        }
       }
 
       const conversa = await this.chatRepository.createConversation({
         ...data,
+        tipo,
         participantes,
       });
 
-      logger.info(`Conversa criada: ${conversa.id_conversa} - Tipo: ${data.tipo}`);
-      return conversa;
+      logger.info(`Conversa criada: ${conversa.id_conversa} - Tipo: ${tipo}`);
+      return { ...this.formatConversa(conversa), reutilizada: false };
     } catch (error: any) {
       logger.error('Erro ao criar conversa:', error);
       throw error;
     }
   }
 
-  async buscarConversa(id_conversa: string, id_usuario: string) {
-    try {
-      const conversa = await this.chatRepository.findConversationById(id_conversa);
-
-      if (!conversa) {
-        throw new NotFoundError('Conversa não encontrada');
-      }
-
-      const isParticipante = conversa.participantes.some(
-        (p) => p.id_usuario === id_usuario
-      );
-
-      if (!isParticipante) {
-        throw new ValidationError('Acesso negado: você não é participante desta conversa');
-      }
-
-      return conversa;
-    } catch (error: any) {
-      throw error;
+  /**
+   * Cria (ou reutiliza) uma conversa direct entre dois utilizadores e, opcionalmente,
+   * adiciona uma mensagem de sistema. Usado ao aceitar uma requisição.
+   */
+  async obterOuCriarConversaDirect(id_usuario_a: string, id_usuario_b: string, mensagemSistema?: string) {
+    if (id_usuario_a === id_usuario_b) {
+      throw new ValidationError('Não é possível conversar consigo próprio');
     }
+    let conversa: any = await this.chatRepository.findExistingDirectConversation([id_usuario_a, id_usuario_b]);
+    if (!conversa) {
+      conversa = await this.chatRepository.createConversation({
+        tipo: 'direct',
+        participantes: [id_usuario_a, id_usuario_b],
+      });
+    }
+    if (mensagemSistema) {
+      const mensagem = await this.chatRepository.createMessage({
+        id_conversa: conversa.id_conversa,
+        id_remetente: id_usuario_a,
+        conteudo: mensagemSistema,
+        tipo: 'sistema',
+      });
+      this.emitParaConversa(conversa.id_conversa, [id_usuario_a, id_usuario_b], CHAT_EVENTS.NEW_MESSAGE, mensagem);
+    }
+    return conversa.id_conversa as string;
+  }
+
+  async buscarConversa(id_conversa: string, id_usuario: string) {
+    const conversa = await this.getConversaComoParticipante(id_conversa, id_usuario);
+    const eu = conversa.participantes.find((p) => p.id_usuario === id_usuario);
+    const naoLidas = await this.chatRepository.countUnread(id_conversa, id_usuario, eu?.ultima_leitura ?? null);
+    return this.formatConversa(conversa, naoLidas);
   }
 
   async enviarMensagem(
     id_conversa: string,
     id_remetente: string,
-    conteudo: string,
+    conteudo: string | undefined,
     tipo: string = 'texto',
-    io?: SocketServer
+    midia_url?: string | null
   ) {
     try {
-      const conversa = await this.chatRepository.findConversationById(id_conversa);
-
-      if (!conversa) {
-        throw new NotFoundError('Conversa não encontrada');
+      const texto = (conteudo ?? '').trim();
+      const tipoFinal = midia_url ? 'imagem' : 'texto';
+      if (tipo && !['texto', 'imagem'].includes(tipo)) {
+        throw new ValidationError('Tipo de mensagem inválido');
+      }
+      if (!midia_url && !texto) {
+        throw new ValidationError('Conteúdo é obrigatório');
+      }
+      if (texto.length > 5000) {
+        throw new ValidationError('Conteúdo deve ter no máximo 5000 caracteres');
       }
 
-      const isParticipante = conversa.participantes.some(
-        (p) => p.id_usuario === id_remetente
-      );
-
-      if (!isParticipante) {
-        throw new ValidationError('Acesso negado: você não é participante desta conversa');
-      }
+      const conversa = await this.getConversaComoParticipante(id_conversa, id_remetente);
 
       const mensagem = await this.chatRepository.createMessage({
         id_conversa,
         id_remetente,
-        conteudo,
-        tipo,
+        conteudo: texto,
+        tipo: tipoFinal,
+        midia_url: midia_url ?? null,
       });
 
-      // Emit via socket
-      if (io) {
-        io.to(`chat:${id_conversa}`).emit('chat:message', mensagem);
-      }
+      const ids = conversa.participantes.map((p) => p.id_usuario);
+      this.emitParaConversa(id_conversa, ids, CHAT_EVENTS.NEW_MESSAGE, mensagem);
 
-      // Criar notificações para os outros participantes
-      const outrosParticipantes = conversa.participantes.filter(
-        (p) => p.id_usuario !== id_remetente
-      );
-
-      for (const participante of outrosParticipantes) {
-        await this.notificacaoRepository.create({
+      // Notificação persistente apenas para quem está offline (evita spam a quem está ligado)
+      const remetenteNome = conversa.participantes.find((p) => p.id_usuario === id_remetente)?.usuario.nome ?? 'Alguém';
+      const preview = tipoFinal === 'imagem' ? '📷 Imagem' : (texto.length > 100 ? texto.substring(0, 100) + '...' : texto);
+      for (const participante of conversa.participantes) {
+        if (participante.id_usuario === id_remetente) continue;
+        if (SocketEmitter.isUserOnline(participante.id_usuario)) continue;
+        await this.notificacaoRepository.createSafe({
           id_usuario: participante.id_usuario,
-          titulo: 'Nova mensagem',
-          mensagem: conteudo.length > 100 ? conteudo.substring(0, 100) + '...' : conteudo,
+          titulo: `Nova mensagem de ${remetenteNome}`.slice(0, 100),
+          mensagem: preview,
           tipo: 'mensagem',
           link: `/chat/${id_conversa}`,
+          id_ator: id_remetente
         });
-
-        if (io) {
-          io.to(`user:${participante.id_usuario}`).emit('chat:newMessage', {
-            id_conversa,
-            mensagem,
-          });
-        }
       }
 
-      logger.info(
-        `Mensagem enviada na conversa ${id_conversa} pelo usuário ${id_remetente}`
-      );
+      logger.info(`Mensagem enviada na conversa ${id_conversa} pelo usuário ${id_remetente}`);
 
       return mensagem;
     } catch (error: any) {
@@ -153,141 +228,85 @@ export class ChatService {
     }
   }
 
-  async listarMensagens(
-    id_conversa: string,
-    id_usuario: string,
-    page: number = 1,
-    limit: number = 50
-  ) {
-    try {
-      const conversa = await this.chatRepository.findConversationById(id_conversa);
+  async listarMensagens(id_conversa: string, id_usuario: string, limit: number = 30, before?: Date) {
+    await this.getConversaComoParticipante(id_conversa, id_usuario);
 
-      if (!conversa) {
-        throw new NotFoundError('Conversa não encontrada');
-      }
+    const take = Math.min(Math.max(limit || 30, 1), 100);
+    const messages = await this.chatRepository.findMessagesByConversation(id_conversa, take + 1, before);
+    const has_more = messages.length > take;
+    const pagina = messages.slice(0, take).reverse(); // ordem cronológica asc
 
-      const isParticipante = conversa.participantes.some(
-        (p) => p.id_usuario === id_usuario
-      );
-
-      if (!isParticipante) {
-        throw new ValidationError('Acesso negado: você não é participante desta conversa');
-      }
-
-      const skip = (page - 1) * limit;
-      const { messages, total } = await this.chatRepository.findMessagesByConversation(
-        id_conversa,
-        skip,
-        limit
-      );
-
-      return {
-        data: messages.reverse(),
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      };
-    } catch (error: any) {
-      logger.error('Erro ao listar mensagens:', error);
-      throw error;
-    }
+    return {
+      data: pagina,
+      pagination: {
+        limit: take,
+        has_more,
+        next_before: has_more && pagina.length > 0 ? pagina[0].created_at.toISOString() : null,
+      },
+    };
   }
 
-  async marcarMensagemComoLida(id_mensagem: string, id_usuario: string, io?: SocketServer) {
-    try {
-      const mensagem = await this.chatRepository.markMessageAsRead(id_mensagem, id_usuario);
-
-      if (!mensagem) {
-        throw new NotFoundError('Mensagem não encontrada');
-      }
-
-      if (io) {
-        io.to(`chat:${mensagem.id_conversa}`).emit('chat:read', {
-          id_mensagem,
-          id_conversa: mensagem.id_conversa,
-          lida: true,
-        });
-      }
-
-      return mensagem;
-    } catch (error: any) {
-      logger.error('Erro ao marcar mensagem como lida:', error);
-      throw error;
+  async marcarMensagemComoLida(id_mensagem: string, id_usuario: string) {
+    const mensagem = await this.chatRepository.findMessageById(id_mensagem);
+    if (!mensagem) {
+      throw new NotFoundError('Mensagem não encontrada');
     }
+    // Ler uma mensagem = ler a conversa até agora (verifica participação)
+    await this.marcarTudoComoLido(mensagem.id_conversa, id_usuario);
+    return { ...mensagem, lida: mensagem.id_remetente !== id_usuario ? true : mensagem.lida };
   }
 
-  async marcarTudoComoLido(id_conversa: string, id_usuario: string, io?: SocketServer) {
-    try {
-      const conversa = await this.chatRepository.findConversationById(id_conversa);
+  async marcarTudoComoLido(id_conversa: string, id_usuario: string) {
+    const conversa = await this.getConversaComoParticipante(id_conversa, id_usuario);
 
-      if (!conversa) {
-        throw new NotFoundError('Conversa não encontrada');
-      }
+    const { count, lida_em } = await this.chatRepository.markAllAsRead(id_conversa, id_usuario);
 
-      const isParticipante = conversa.participantes.some(
-        (p) => p.id_usuario === id_usuario
-      );
+    this.emitParaConversa(
+      id_conversa,
+      conversa.participantes.map((p) => p.id_usuario),
+      CHAT_EVENTS.READ,
+      { id_conversa, id_usuario, lida_em }
+    );
 
-      if (!isParticipante) {
-        throw new ValidationError('Acesso negado: você não é participante desta conversa');
-      }
-
-      const count = await this.chatRepository.markAllAsRead(id_conversa, id_usuario);
-
-      if (io) {
-        io.to(`chat:${id_conversa}`).emit('chat:read', {
-          id_conversa,
-          lida: true,
-        });
-      }
-
-      logger.info(
-        `${count} mensagens marcadas como lidas na conversa ${id_conversa} pelo usuário ${id_usuario}`
-      );
-
-      return { count, message: `${count} mensagem(ns) marcada(s) como lida(s)` };
-    } catch (error: any) {
-      logger.error('Erro ao marcar todas como lidas:', error);
-      throw error;
-    }
+    return { id_conversa, count, lida_em, message: `${count} mensagem(ns) marcada(s) como lida(s)` };
   }
 
   async getUnreadCount(id_usuario: string) {
-    try {
-      return await this.chatRepository.getUnreadCount(id_usuario);
-    } catch (error: any) {
-      logger.error('Erro ao obter contagem de não lidas:', error);
-      throw error;
-    }
+    return await this.chatRepository.getUnreadCount(id_usuario);
   }
 
+  /** Sair da conversa: remove apenas o meu registo de participante; apaga a conversa se ficar vazia. */
   async deletarConversa(id_conversa: string, id_usuario: string) {
-    try {
-      const conversa = await this.chatRepository.findConversationById(id_conversa);
+    await this.getConversaComoParticipante(id_conversa, id_usuario);
+    const { conversaApagada } = await this.chatRepository.leaveConversation(id_conversa, id_usuario);
+    emitToUser(id_usuario, 'chat:removed', { id_conversa });
+    logger.info(`Usuário ${id_usuario} saiu da conversa ${id_conversa}${conversaApagada ? ' (conversa apagada)' : ''}`);
+    return { message: 'Conversa removida com sucesso' };
+  }
 
-      if (!conversa) {
-        throw new NotFoundError('Conversa não encontrada');
+  async listarContatos(id_usuario: string, q?: string) {
+    const termo = q?.trim() ? q.trim().slice(0, 100) : undefined;
+    const { seguindo, seguidores, clientes, sugestoes } = await this.chatRepository.findContatos(id_usuario, termo, 50);
+
+    const mapa = new Map<string, any>();
+    const adicionar = (lista: any[], relacao: RelacaoContato) => {
+      for (const u of lista) {
+        if (!u || u.id_usuario === id_usuario || mapa.has(u.id_usuario)) continue;
+        mapa.set(u.id_usuario, {
+          id_usuario: u.id_usuario,
+          nome: u.nome,
+          foto_perfil: u.foto_perfil,
+          tipo: u.tipo,
+          tipo_fazedor: u.fazedor?.tipo_fazedor ?? null,
+          relacao,
+        });
       }
+    };
+    adicionar(seguindo, 'seguindo');
+    adicionar(seguidores, 'seguidor');
+    adicionar(clientes, 'cliente');
+    adicionar(sugestoes, 'sugestao');
 
-      const isParticipante = conversa.participantes.some(
-        (p) => p.id_usuario === id_usuario
-      );
-
-      if (!isParticipante) {
-        throw new ValidationError('Acesso negado: você não é participante desta conversa');
-      }
-
-      await this.chatRepository.deleteConversation(id_conversa);
-
-      logger.info(`Conversa ${id_conversa} deletada pelo usuário ${id_usuario}`);
-
-      return { message: 'Conversa deletada com sucesso' };
-    } catch (error: any) {
-      logger.error('Erro ao deletar conversa:', error);
-      throw error;
-    }
+    return Array.from(mapa.values()).slice(0, 50);
   }
 }

@@ -80,6 +80,10 @@ enum NotificacaoTipo {
   evento
   sistema
   mensagem
+  avaliacao
+  seguidor
+  comentario
+  reacao
 }
 
 enum Genero {
@@ -130,12 +134,14 @@ model Usuario {
   favoritos                Favorito[]
   avaliacoesFeitas         Avaliacao[]               @relation("AvaliacoesFeitas")
   notificacoes             Notificacao[]
+  notificacoesGeradas      Notificacao[]             @relation("NotificacoesAtor")
   eventosParticipados      EventoParticipante[]
   storyVisualizacaos       StoryVisualizacao[]
   servicoComentarios       ServicoComentario[]
   servicoComentarioReacaos ServicoComentarioReacao[]
   servicoReacaos           ServicoReacao[]
   servicoCompartilhamentos ServicoCompartilhamento[]
+  servicoDenuncias         ServicoDenuncia[]
   refreshTokens            RefreshToken[]
   seguidores               Seguidor[]                 @relation("Seguidores")
   seguindo                 Seguidor[]                 @relation("Seguindo")
@@ -163,6 +169,14 @@ model Fazedor {
   avaliacao_media  Decimal?               @db.Decimal(3, 2)
   total_avaliacoes Int?                   @default(0)
 
+  latitude         Decimal? @db.Decimal(10, 8)
+  longitude        Decimal? @db.Decimal(11, 8)
+  cidade           String?  @db.VarChar(100)
+  provincia        String?  @db.VarChar(100)
+  whatsapp         String?  @db.VarChar(20)
+  telefone_publico String?  @db.VarChar(20)
+  email_publico    String?  @db.VarChar(100)
+
   usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
   agencia          Agencia?
@@ -182,6 +196,7 @@ model Fazedor {
   @@index([tipo_fazedor])
   @@index([status_aprovacao])
   @@index([avaliacao_media])
+  @@index([latitude, longitude])
   @@map("FAZEDOR")
 }
 
@@ -374,6 +389,7 @@ model Servico {
   servicoComentarios       ServicoComentario[]
   servicoReacaos           ServicoReacao[]
   servicoCompartilhamentos ServicoCompartilhamento[]
+  servicoDenuncias         ServicoDenuncia[]
 
   @@index([categoria])
   @@index([id_fazedor])
@@ -404,7 +420,6 @@ model Evento {
   status      EventoStatus @default(ativo)
 
   imagem_public_id  String?  @db.VarChar(255)
-  vagas_disponiveis Int      @default(0)
   data_criacao      DateTime @default(now())
   valor_ingresso    Decimal? @default(0) @db.Decimal(10, 2)
 
@@ -455,6 +470,7 @@ model Story {
   usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
   @@index([expira_em])
+  @@index([id_usuario])
   @@map("STORY")
 }
 
@@ -495,8 +511,8 @@ model Requisicao {
   id_requisicao String @id @default(uuid()) @db.Char(36)
 
   id_solicitante String  @db.Char(36)
-  id_servico     String?
-  id_modelo      String?
+  id_servico     String?  @db.Char(36)
+  id_modelo      String?  @db.Char(36)
 
   data_requisicao DateTime         @default(now())
   status          RequisicaoStatus @default(pendente)
@@ -512,6 +528,8 @@ model Requisicao {
 
   @@index([id_solicitante])
   @@index([status])
+  @@index([id_servico])
+  @@index([id_modelo])
   @@map("REQUISICAO")
 }
 
@@ -525,8 +543,10 @@ model Notificacao {
   lida       Boolean         @default(false)
   data_envio DateTime        @default(now())
   link       String?         @db.VarChar(255)
+  id_ator    String?         @db.Char(36)
 
-  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  usuario Usuario  @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  ator    Usuario? @relation("NotificacoesAtor", fields: [id_ator], references: [id_usuario], onDelete: SetNull)
 
   @@index([id_usuario, lida])
   @@index([data_envio])
@@ -636,7 +656,7 @@ model ServicoComentario {
   servico       Servico                   @relation(fields: [id_servico], references: [id_servico], onDelete: Cascade)
   usuario       Usuario                   @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
   respostas     ServicoComentario[]       @relation("ComentarioRespostas")
-  comentarioPai ServicoComentario?        @relation("ComentarioRespostas", fields: [parent_id], references: [id_comentario])
+  comentarioPai ServicoComentario?        @relation("ComentarioRespostas", fields: [parent_id], references: [id_comentario], onDelete: Cascade, onUpdate: NoAction)
   reacoes       ServicoComentarioReacao[]
 
   @@index([id_servico])
@@ -690,6 +710,38 @@ model ServicoCompartilhamento {
   @@map("SERVICO_COMPARTILHAMENTO")
 }
 
+enum DenunciaMotivo {
+  spam
+  improprio
+  falso
+  outro
+}
+
+enum DenunciaStatus {
+  pendente
+  resolvida
+  rejeitada
+}
+
+model ServicoDenuncia {
+  id_denuncia String         @id @default(uuid()) @db.Char(36)
+  id_servico  String         @db.Char(36)
+  id_usuario  String         @db.Char(36)
+  motivo      DenunciaMotivo
+  descricao   String?        @db.VarChar(500)
+  status      DenunciaStatus @default(pendente)
+
+  data_criacao DateTime  @default(now())
+  data_revisao DateTime?
+
+  servico Servico @relation(fields: [id_servico], references: [id_servico], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@unique([id_servico, id_usuario])
+  @@index([status])
+  @@map("SERVICO_DENUNCIA")
+}
+
 model DeviceToken {
   id           String   @id @default(uuid()) @db.Char(36)
   id_usuario   String   @db.Char(36)
@@ -720,6 +772,7 @@ model ModeloPortfolio {
 
   modelo Modelo @relation(fields: [id_modelo], references: [id_modelo], onDelete: Cascade)
 
+  @@index([id_modelo])
   @@map("MODELO_PORTFOLIO")
 }
 
@@ -763,6 +816,7 @@ model Mensagem {
   id_remetente String   @db.Char(36)
   conteudo     String   @db.Text
   tipo         String   @default("texto") @db.VarChar(20)
+  midia_url    String?  @db.VarChar(255)
   lida         Boolean  @default(false)
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt

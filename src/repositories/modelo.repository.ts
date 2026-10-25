@@ -1,22 +1,35 @@
 import { PrismaClient, Modelo, ModeloPortfolio, Prisma } from '@prisma/client';
 import prisma from '../config/database';
-import logger from '../utils/logger';
+import { usuarioPublicoSelect } from '../utils/prisma-selects';
 
-type ModeloWithRelations = Prisma.ModeloGetPayload<{
-  include: {
-    agencia: {
-      include: {
-        fazedor: {
-          include: {
-            usuario: true;
-          };
-        };
-      };
-    };
-    portfolio: true;
-    requisicoes: true;
-  };
-}>;
+/** Agência pública de um modelo (sem dados sensíveis do utilizador). */
+const agenciaPublicaSelect = {
+  id_agencia: true,
+  nome_agencia: true,
+  logo_url: true,
+  fazedor: {
+    select: {
+      id_fazedor: true,
+      id_usuario: true,
+      cidade: true,
+      usuario: { select: usuarioPublicoSelect }
+    }
+  }
+} satisfies Prisma.AgenciaSelect;
+
+export const modeloDetalheInclude = {
+  agencia: { select: agenciaPublicaSelect },
+  portfolio: { orderBy: { ordem: 'asc' as const } }
+} satisfies Prisma.ModeloInclude;
+
+export type ModeloWithRelations = Prisma.ModeloGetPayload<{ include: typeof modeloDetalheInclude }>;
+
+export interface ModeloListFilters {
+  status?: string;
+  genero?: string;
+  search?: string;
+  id_agencia?: string;
+}
 
 export class ModeloRepository {
   private prisma: PrismaClient;
@@ -25,106 +38,63 @@ export class ModeloRepository {
     this.prisma = prisma;
   }
 
-  async create(data: any): Promise<any> {
-    const mappedData: any = {
-      id_agencia: data.id_agencia,
-      nome_completo: data.nome_completo,
-      nome_artistico: data.nome_artistico || null,
-      genero: data.genero || 'feminino',
-      altura: data.altura ? parseFloat(data.altura) : null,
-      peso: data.peso ? parseFloat(data.peso) : null,
-      busto: data.busto ? parseInt(data.busto) : null,
-      cintura: data.cintura ? parseInt(data.cintura) : null,
-      quadril: data.quadril ? parseInt(data.quadril) : null,
-      sapato: data.sapato ? parseInt(data.sapato) : null,
-      roupa: data.roupa ? parseInt(data.roupa) : null,
-      cabelo: data.cabelo || null,
-      olhos: data.olhos || null,
-      foto_url: data.foto_url || null,
-      foto_public_id: data.foto_public_id || null,
-      status: data.status || 'ativo',
-      experiencia: data.experiencia || null,
-      idade: data.idade ? parseInt(data.idade) : null,
-      nacionalidade: data.nacionalidade || null,
-      habilidades: data.habilidades || null,
-      redes_sociais: data.redes_sociais || null,
-    };
-    Object.keys(mappedData).forEach(key => {
-      if (mappedData[key] === undefined || mappedData[key] === null) {
-        delete mappedData[key];
-      }
-    });
-    logger.info('📦 Prisma create data:', mappedData);
-    return this.prisma.modelo.create({
-      data: mappedData,
-    });
+  /** `data` já deve vir sanitizado (allowlist) pelo serviço. */
+  async create(data: Prisma.ModeloUncheckedCreateInput): Promise<Modelo> {
+    return this.prisma.modelo.create({ data });
   }
+
   async findById(id_modelo: string): Promise<ModeloWithRelations | null> {
     return await this.prisma.modelo.findUnique({
       where: { id_modelo },
-      include: {
-        agencia: {
-          include: {
-            fazedor: {
-              include: {
-                usuario: true
-              }
-            }
-          }
-        },
-        portfolio: {
-          orderBy: { ordem: 'asc' }
-        },
-        requisicoes: {
-          take: 5,
-          orderBy: { data_requisicao: 'desc' }
-        }
-      }
+      include: modeloDetalheInclude
     });
   }
 
-  async findByAgencia(id_agencia: string, filters?: {
-    status?: string;
-    genero?: string;
-    search?: string;
-  }): Promise<Modelo[]> {
-    const where: any = { id_agencia };
-
-    if (filters?.status) where.status = filters.status;
-    if (filters?.genero) where.genero = filters.genero;
+  private buildWhere(filters?: ModeloListFilters): Prisma.ModeloWhereInput {
+    const where: Prisma.ModeloWhereInput = {};
+    if (filters?.id_agencia) where.id_agencia = filters.id_agencia;
+    if (filters?.status) where.status = filters.status as any;
+    if (filters?.genero) where.genero = filters.genero as any;
     if (filters?.search) {
       where.OR = [
         { nome_completo: { contains: filters.search } },
         { nome_artistico: { contains: filters.search } }
       ];
     }
-
-    return await this.prisma.modelo.findMany({
-      where,
-      include: {
-        portfolio: {
-          take: 3,
-          orderBy: { ordem: 'asc' }
-        }
-      },
-      orderBy: { data_cadastro: 'desc' }
-    });
+    return where;
   }
 
+  async findMany(filters: ModeloListFilters, skip: number, take: number) {
+    const where = this.buildWhere(filters);
+    const [items, total] = await Promise.all([
+      this.prisma.modelo.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          agencia: { select: agenciaPublicaSelect },
+          portfolio: { take: 3, orderBy: { ordem: 'asc' } },
+          _count: { select: { portfolio: true, requisicoes: true } }
+        },
+        orderBy: { data_cadastro: 'desc' }
+      }),
+      this.prisma.modelo.count({ where })
+    ]);
+    return { items, total };
+  }
 
-  async update(id_modelo: string, data: any): Promise<Modelo> {
-    const cleanData: any = {};
-    Object.keys(data).forEach(key => {
-      if (data[key] !== undefined) {
-        cleanData[key] = data[key];
-      }
-    });
+  async findByAgencia(id_agencia: string, filters?: ModeloListFilters): Promise<Modelo[]> {
+    const { items } = await this.findMany({ ...filters, id_agencia }, 0, 200);
+    return items;
+  }
 
+  async update(id_modelo: string, data: Prisma.ModeloUncheckedUpdateInput): Promise<Modelo> {
     return await this.prisma.modelo.update({
       where: { id_modelo },
-      data: cleanData
+      data
     });
   }
+
   async delete(id_modelo: string): Promise<Modelo> {
     return await this.prisma.modelo.delete({
       where: { id_modelo }
@@ -150,6 +120,14 @@ export class ModeloRepository {
       where: { id_modelo },
       orderBy: { ordem: 'asc' }
     });
+  }
+
+  async countFotosPortfolio(id_modelo: string): Promise<number> {
+    return await this.prisma.modeloPortfolio.count({ where: { id_modelo } });
+  }
+
+  async findFotoPortfolio(id_modelo_portfolio: string): Promise<ModeloPortfolio | null> {
+    return await this.prisma.modeloPortfolio.findUnique({ where: { id_modelo_portfolio } });
   }
 
   async deleteFotoPortfolio(id_modelo_portfolio: string): Promise<void> {

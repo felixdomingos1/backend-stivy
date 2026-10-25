@@ -2,13 +2,57 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import logger from '../utils/logger';
 import { EmailService } from '../services/email.service';
+import { AuthRequest } from '../middleware/auth.middleware';
+import { revokeAllUserTokens } from '../utils/jwt';
+import { usuarioPrivadoSelect } from '../utils/prisma-selects';
+import { DENUNCIA_STATUS } from '../services/servico-denuncia.service';
+
 const emailService = EmailService.getInstance();
+
+const MAX_LIMIT = 100;
+
+/** Normaliza paginação: page >= 1, 1 <= limit <= 100. */
+const paginacao = (query: any) => {
+  const page = Math.max(1, Math.floor(Number(query.page)) || 1);
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(Number(query.limit)) || 20));
+  return { page, limit, skip: (page - 1) * limit };
+};
+
+const escapeHtml = (v: any): string =>
+  String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+
+/**
+ * Valida que o admin pode agir sobre o utilizador alvo: nunca sobre si próprio nem sobre outro admin.
+ * Responde e devolve null se não puder.
+ */
+const validarAlvo = async (req: AuthRequest, res: Response, id: string, acao: string) => {
+  if (!id) {
+    res.status(400).json({ success: false, error: 'ID do usuário é obrigatório' });
+    return null;
+  }
+  if (id === req.usuarioId) {
+    res.status(403).json({ success: false, error: `Não pode ${acao} a sua própria conta` });
+    return null;
+  }
+  const alvo = await prisma.usuario.findUnique({
+    where: { id_usuario: id },
+    select: { id_usuario: true, email: true, tipo: true }
+  });
+  if (!alvo) {
+    res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+    return null;
+  }
+  if (alvo.tipo === 'sistem_admin') {
+    res.status(403).json({ success: false, error: `Não é permitido ${acao} outro administrador` });
+    return null;
+  }
+  return alvo;
+};
 export class AdminController {
 
   static async listarFazedoresPendentes(req: Request, res: Response): Promise<void> {
     try {
-      const { page = 1, limit = 20 } = req.query;
-      const skip = (Number(page) - 1) * Number(limit);
+      const { page, limit, skip } = paginacao(req.query);
 
       const [fazedores, total] = await Promise.all([
         prisma.fazedor.findMany({
@@ -24,7 +68,7 @@ export class AdminController {
             }
           },
           skip,
-          take: Number(limit),
+          take: limit,
           orderBy: { data_aprovacao: 'asc' }
         }),
         prisma.fazedor.count({ where: { status_aprovacao: 'pendente' } })
@@ -34,14 +78,14 @@ export class AdminController {
         success: true,
         data: fazedores,
         pagination: {
-          page: Number(page),
-          limit: Number(limit),
+          page,
+          limit,
           total,
-          totalPages: Math.ceil(total / Number(limit))
+          totalPages: Math.ceil(total / limit)
         }
       });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao listar fazedores pendentes' });
+      res.status(500).json({ success: false, error: 'Erro ao listar fazedores pendentes' });
     }
   }
 
@@ -56,12 +100,12 @@ export class AdminController {
       });
 
       if (!fazedor) {
-        res.status(404).json({ error: 'Fazedor não encontrado' });
+        res.status(404).json({ success: false, error: 'Fazedor não encontrado' });
         return;
       }
 
       if (fazedor.status_aprovacao !== 'pendente') {
-        res.status(400).json({ error: 'Este fazedor já foi processado' });
+        res.status(400).json({ success: false, error: 'Este fazedor já foi processado' });
         return;
       }
 
@@ -71,7 +115,7 @@ export class AdminController {
           status_aprovacao: 'aprovado',
           data_aprovacao: new Date()
         },
-        include: { usuario: true }
+        include: { usuario: { select: usuarioPrivadoSelect } }
       });
 
 
@@ -79,10 +123,10 @@ export class AdminController {
         to: fazedor.usuario.email,
         subject: 'Perfil Aprovado - Stivy',
         html: `
-          <h2>Olá ${fazedor.usuario.nome}</h2>
+          <h2>Olá ${escapeHtml(fazedor.usuario.nome)}</h2>
           <p>Seu perfil foi aprovado com sucesso!</p>
-          <p>Tipo: ${fazedor.tipo_fazedor}</p>
-          <p>${observacoes || ''}</p>
+          <p>Tipo: ${escapeHtml(fazedor.tipo_fazedor)}</p>
+          <p>${escapeHtml(observacoes || '')}</p>
         `
       });
 
@@ -95,7 +139,7 @@ export class AdminController {
       });
     } catch (error) {
       logger.error(error);
-      res.status(500).json({ error: 'Erro ao aprovar fazedor' });
+      res.status(500).json({ success: false, error: 'Erro ao aprovar fazedor' });
     }
   }
 
@@ -105,7 +149,7 @@ export class AdminController {
       const { motivo } = req.body;
 
       if (!motivo) {
-        res.status(400).json({ error: 'Motivo da rejeição é obrigatório' });
+        res.status(400).json({ success: false, error: 'Motivo da rejeição é obrigatório' });
         return;
       }
 
@@ -115,7 +159,7 @@ export class AdminController {
       });
 
       if (!fazedor) {
-        res.status(404).json({ error: 'Fazedor não encontrado' });
+        res.status(404).json({ success: false, error: 'Fazedor não encontrado' });
         return;
       }
 
@@ -130,9 +174,9 @@ export class AdminController {
         to: fazedor.usuario.email,
         subject: 'Perfil Rejeitado - Stivy',
         html: `
-          <h2>Olá ${fazedor.usuario.nome}</h2>
+          <h2>Olá ${escapeHtml(fazedor.usuario.nome)}</h2>
           <p>Seu perfil foi rejeitado.</p>
-          <p><strong>Motivo:</strong> ${motivo}</p>
+          <p><strong>Motivo:</strong> ${escapeHtml(motivo)}</p>
         `
       });
 
@@ -145,7 +189,7 @@ export class AdminController {
       });
     } catch (error) {
       logger.error(error);
-      res.status(500).json({ error: 'Erro ao rejeitar fazedor' });
+      res.status(500).json({ success: false, error: 'Erro ao rejeitar fazedor' });
     }
   }
 
@@ -187,13 +231,13 @@ export class AdminController {
       });
 
       if (!fazedor) {
-        res.status(404).json({ error: 'Fazedor não encontrado' });
+        res.status(404).json({ success: false, error: 'Fazedor não encontrado' });
         return;
       }
 
       res.json({ success: true, data: fazedor });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar detalhes do fazedor' });
+      res.status(500).json({ success: false, error: 'Erro ao buscar detalhes do fazedor' });
     }
   }
 
@@ -240,18 +284,18 @@ export class AdminController {
         }
       });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar estatísticas' });
+      res.status(500).json({ success: false, error: 'Erro ao buscar estatísticas' });
     }
   }
 
   static async listarUsuarios(req: Request, res: Response): Promise<void> {
     try {
-      const { page = 1, limit = 20, status, tipo } = req.query;
-      const skip = (Number(page) - 1) * Number(limit);
+      const { page, limit, skip } = paginacao(req.query);
+      const { status, tipo } = req.query;
 
       const where: any = {};
-      if (status) where.status = status;
-      if (tipo) where.tipo = tipo;
+      if (typeof status === 'string' && ['ativo', 'inativo', 'bloqueado'].includes(status)) where.status = status;
+      if (typeof tipo === 'string' && ['fazedor', 'apreciador', 'sistem_admin'].includes(tipo)) where.tipo = tipo;
 
       const [usuarios, total] = await Promise.all([
         prisma.usuario.findMany({
@@ -272,7 +316,7 @@ export class AdminController {
             }
           },
           skip,
-          take: Number(limit),
+          take: limit,
           orderBy: { data_cadastro: 'desc' }
         }),
         prisma.usuario.count({ where })
@@ -282,73 +326,150 @@ export class AdminController {
         success: true,
         data: usuarios,
         pagination: {
-          page: Number(page),
-          limit: Number(limit),
+          page,
+          limit,
           total,
-          totalPages: Math.ceil(total / Number(limit))
+          totalPages: Math.ceil(total / limit)
         }
       });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao listar usuários' });
+      res.status(500).json({ success: false, error: 'Erro ao listar usuários' });
     }
   }
 
-  static async bloquearUsuario(req: Request, res: Response): Promise<void> {
+  static async bloquearUsuario(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+      const alvo = await validarAlvo(req, res, id, 'bloquear');
+      if (!alvo) return;
 
-      const usuario = await prisma.usuario.update({
+      await prisma.usuario.update({
         where: { id_usuario: id },
         data: { status: 'bloqueado' }
       });
+      await revokeAllUserTokens(id);
 
-      logger.info(`Usuário ${usuario.email} bloqueado por admin`);
+      logger.info(`Usuário ${id} bloqueado pelo admin ${req.usuarioId}`);
 
       res.json({
         success: true,
         message: 'Usuário bloqueado com sucesso'
       });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao bloquear usuário' });
+      logger.error(error);
+      res.status(500).json({ success: false, error: 'Erro ao bloquear usuário' });
     }
   }
 
-  static async deletarUsuario(req: Request, res: Response): Promise<void> {
+  static async deletarUsuario(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+      const alvo = await validarAlvo(req, res, id, 'eliminar');
+      if (!alvo) return;
 
-      const usuario = await prisma.usuario.delete({
+      await prisma.usuario.delete({
         where: { id_usuario: id },
       });
 
-      logger.info(`Usuário ${usuario.email} Deletado por admin`);
+      logger.info(`Usuário ${id} eliminado pelo admin ${req.usuarioId}`);
 
       res.json({
         success: true,
-        message: 'Usuário Deletado com sucesso'
+        message: 'Usuário eliminado com sucesso'
       });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao bloquear usuário' });
+      logger.error(error);
+      res.status(500).json({ success: false, error: 'Erro ao eliminar usuário' });
     }
   }
 
-  static async desbloquearUsuario(req: Request, res: Response): Promise<void> {
+  static async desbloquearUsuario(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+      const alvo = await validarAlvo(req, res, id, 'desbloquear');
+      if (!alvo) return;
 
-      const usuario = await prisma.usuario.update({
+      await prisma.usuario.update({
         where: { id_usuario: id },
         data: { status: 'ativo' }
       });
 
-      logger.info(`Usuário ${usuario.email} desbloqueado por admin`);
+      logger.info(`Usuário ${id} desbloqueado pelo admin ${req.usuarioId}`);
 
       res.json({
         success: true,
         message: 'Usuário desbloqueado com sucesso'
       });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao desbloquear usuário' });
+      logger.error(error);
+      res.status(500).json({ success: false, error: 'Erro ao desbloquear usuário' });
+    }
+  }
+
+  static async listarDenuncias(req: Request, res: Response): Promise<void> {
+    try {
+      const { page, limit, skip } = paginacao(req.query);
+      const status = req.query.status as any;
+      if (status && !DENUNCIA_STATUS.includes(status)) {
+        res.status(400).json({ success: false, error: `Status deve ser um de: ${DENUNCIA_STATUS.join(', ')}` });
+        return;
+      }
+      const where = status ? { status } : {};
+
+      const [denuncias, total] = await Promise.all([
+        prisma.servicoDenuncia.findMany({
+          where,
+          include: {
+            usuario: { select: { id_usuario: true, nome: true, email: true } },
+            servico: { select: { id_servico: true, titulo: true, imagem_url: true, status: true, id_fazedor: true } }
+          },
+          skip,
+          take: limit,
+          orderBy: { data_criacao: 'desc' }
+        }),
+        prisma.servicoDenuncia.count({ where })
+      ]);
+
+      res.json({
+        success: true,
+        data: denuncias,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      });
+    } catch (error) {
+      logger.error(error);
+      res.status(500).json({ success: false, error: 'Erro ao listar denúncias' });
+    }
+  }
+
+  static async atualizarDenuncia(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+      const { status } = req.body;
+      if (!DENUNCIA_STATUS.includes(status)) {
+        res.status(400).json({ success: false, error: `Status deve ser um de: ${DENUNCIA_STATUS.join(', ')}` });
+        return;
+      }
+
+      const denuncia = await prisma.servicoDenuncia.update({
+        where: { id_denuncia: id },
+        data: { status, data_revisao: status === 'pendente' ? null : new Date() }
+      });
+
+      logger.info(`Denúncia ${id} marcada como ${status} pelo admin ${req.usuarioId}`);
+
+      res.json({ success: true, data: denuncia });
+    } catch (error: any) {
+      if (error?.code === 'P2025') {
+        res.status(404).json({ success: false, error: 'Denúncia não encontrada' });
+        return;
+      }
+      logger.error(error);
+      res.status(500).json({ success: false, error: 'Erro ao actualizar denúncia' });
     }
   }
 }

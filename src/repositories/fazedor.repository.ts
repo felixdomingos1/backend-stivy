@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import prisma from '../config/database';
+import { usuarioPublicoSelect, usuarioPrivadoSelect } from '../utils/prisma-selects';
 
 export interface FazedorFilters {
   tipo_fazedor?: string;
@@ -22,7 +23,7 @@ export class FazedorRepository {
       include: {
         fazedor: {
           include: {
-            usuario: true
+            usuario: { select: usuarioPublicoSelect }
           }
         }
       }
@@ -33,7 +34,7 @@ export class FazedorRepository {
     return await this.prisma.fazedor.findUnique({
       where: { id_fazedor },
       include: {
-        usuario: true,
+        usuario: { select: usuarioPublicoSelect },
         agencia: true,
         portfolio: true
       }
@@ -44,16 +45,7 @@ export class FazedorRepository {
     return await this.prisma.fazedor.findUnique({
       where: { id_fazedor: id },
       include: {
-        usuario: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            telefone: true,
-            foto_perfil: true,
-            data_cadastro: true
-          }
-        }
+        usuario: { select: usuarioPublicoSelect }
       }
     });
   }
@@ -71,7 +63,7 @@ export class FazedorRepository {
         status_aprovacao: (data.status_aprovacao as any) || 'aprovado'
       },
       include:{
-        usuario:true
+        usuario: { select: { nome: true } }
       }
     });
 
@@ -131,7 +123,7 @@ export class FazedorRepository {
         estilista: true,
         maquiador: true,
         fotografo: true,
-        usuario: true
+        usuario: { select: usuarioPrivadoSelect }
       }
     });
   }
@@ -152,16 +144,21 @@ export class FazedorRepository {
 
   private get fazedorDetailsInclude() {
     return {
-      usuario: true,
+      usuario: { select: usuarioPublicoSelect },
       agencia: {
-        include: { modelos: true }
+        include: {
+          modelos: {
+            where: { status: 'ativo' as const },
+            orderBy: { data_cadastro: 'desc' as const },
+            take: 50
+          }
+        }
       },
-      avaliacoesRecebidas: true,
       modeloFreelancer: true,
       estilista: true,
       maquiador: true,
       fotografo: true,
-      servicos: true
+      _count: { select: { servicos: true, avaliacoesRecebidas: true, eventos: true, favoritadoPor: true } }
     } as const;
   }
 
@@ -172,11 +169,9 @@ export class FazedorRepository {
       where.tipo_fazedor = filters.tipo_fazedor;
     }
 
-    // if (filters?.status_aprovacao) {
-    //   where.status_aprovacao = filters.status_aprovacao;
-    // } else {
-    //   where.status_aprovacao = 'aprovado';
-    // }
+    if (filters?.status_aprovacao) {
+      where.status_aprovacao = filters.status_aprovacao;
+    }
 
     if (filters?.avaliacao_minima !== undefined) {
       where.avaliacao_media = {
@@ -207,9 +202,10 @@ export class FazedorRepository {
     }
 
     if (filters?.cidade) {
-      where.endereco = {
-        contains: filters.cidade
-      };
+      where.AND = [
+        ...(where.AND ?? []),
+        { OR: [{ cidade: { contains: filters.cidade } }, { endereco: { contains: filters.cidade } }] }
+      ];
     }
 
     const result = await this.prisma.fazedor.findMany({
@@ -221,16 +217,7 @@ export class FazedorRepository {
         { total_avaliacoes: 'desc' }
       ],
       include: {
-        usuario: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            telefone: true,
-            foto_perfil: true,
-            data_cadastro: true
-          }
-        },
+        usuario: { select: usuarioPublicoSelect },
         agencia: {
           select: {
             id_agencia: true,
@@ -293,8 +280,6 @@ export class FazedorRepository {
 
     if (filters?.status_aprovacao) {
       where.status_aprovacao = filters.status_aprovacao;
-    } else {
-      where.status_aprovacao = 'aprovado';
     }
 
     if (filters?.avaliacao_minima !== undefined) {
@@ -326,9 +311,10 @@ export class FazedorRepository {
     }
 
     if (filters?.cidade) {
-      where.endereco = {
-        contains: filters.cidade
-      };
+      where.AND = [
+        ...(where.AND ?? []),
+        { OR: [{ cidade: { contains: filters.cidade } }, { endereco: { contains: filters.cidade } }] }
+      ];
     }
 
     return await this.prisma.fazedor.count({ where });
@@ -343,15 +329,7 @@ export class FazedorRepository {
       skip: skip || 0,
       take: take || 20,
       include: {
-        usuario: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            telefone: true,
-            foto_perfil: true
-          }
-        }
+        usuario: { select: usuarioPublicoSelect }
       }
     });
   }
@@ -370,15 +348,7 @@ export class FazedorRepository {
         avaliacao_media: 'desc'
       },
       include: {
-        usuario: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            telefone: true,
-            foto_perfil: true
-          }
-        }
+        usuario: { select: usuarioPublicoSelect }
       }
     });
   }
@@ -391,16 +361,7 @@ export class FazedorRepository {
       skip: skip || 0,
       take: take || 20,
       include: {
-        usuario: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            telefone: true,
-            foto_perfil: true,
-            data_cadastro: true
-          }
-        }
+        usuario: { select: usuarioPublicoSelect }
       }
     });
   }
@@ -434,24 +395,34 @@ export class FazedorRepository {
     });
   }
 
-  async findByProximidade(_latitude: number, _longitude: number, _raioKm: number = 10): Promise<any[]> {
+  /** Fazedores com coordenadas, opcionalmente dentro de uma caixa (pré-filtro do Haversine). */
+  async findComCoordenadas(
+    box?: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+    tipo_fazedor?: string,
+    take = 1000
+  ) {
     return await this.prisma.fazedor.findMany({
       where: {
-        status_aprovacao: 'aprovado',
-        endereco: {
-          not: null
-        }
+        status_aprovacao: { not: 'rejeitado' },
+        usuario: { status: 'ativo' },
+        ...(tipo_fazedor && { tipo_fazedor: tipo_fazedor as any }),
+        latitude: box ? { gte: box.minLat, lte: box.maxLat } : { not: null },
+        longitude: box ? { gte: box.minLng, lte: box.maxLng } : { not: null },
       },
-      include: {
-        usuario: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            telefone: true,
-            foto_perfil: true
-          }
-        }
+      take,
+      orderBy: { avaliacao_media: 'desc' },
+      select: {
+        id_fazedor: true,
+        id_usuario: true,
+        tipo_fazedor: true,
+        cidade: true,
+        provincia: true,
+        endereco: true,
+        latitude: true,
+        longitude: true,
+        avaliacao_media: true,
+        total_avaliacoes: true,
+        usuario: { select: { nome: true, foto_perfil: true } }
       }
     });
   }

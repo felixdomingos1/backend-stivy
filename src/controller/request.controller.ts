@@ -7,7 +7,7 @@ import { ModeloRepository } from '../repositories/modelo.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { CreateRequisicaoDto } from '../dtos/request.dto';
 import logger from '../utils/logger';
-import { ValidationError, NotFoundError } from '../utils/errors';
+import { sendDomainError } from '../services/authorization.service';
 import { RequestService } from '../services/request.service';
 
 export class RequestController {
@@ -39,7 +39,7 @@ export class RequestController {
         return;
       }
 
-      const id_servico = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id_servico = String(req.params.id_servico ?? req.params.id);
       const dto: CreateRequisicaoDto = req.body;
       const result = await this.requestService.requisitarServico(
         req.usuarioId,
@@ -65,7 +65,7 @@ export class RequestController {
         res.status(401).json({ error: 'Não autorizado' });
         return;
       }
-      const id_modelo = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+      const id_modelo = String(req.params.id_modelo ?? req.params.id);
       const dto: CreateRequisicaoDto = req.body;
       const result = await this.requestService.requisitarModelo(
         req.usuarioId,
@@ -114,7 +114,9 @@ export class RequestController {
         return;
       }
 
-      const { status, data_inicio, data_fim, page = 1, limit = 20 } = req.query;
+      const { status, data_inicio, data_fim } = req.query;
+      const page = Math.max(parseInt(String(req.query.page ?? '1'), 10) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
 
       const filters = {
         status: status as string,
@@ -125,11 +127,20 @@ export class RequestController {
       const result = await this.requestService.listMinhasRequisicoes(
         req.usuarioId,
         filters,
-        Number(page),
-        Number(limit)
+        page,
+        limit
       );
 
-      res.json(result);
+      res.json({
+        success: true,
+        data: result.data,
+        pagination: {
+          page: result.page,
+          limit: result.limit,
+          total: result.total,
+          totalPages: result.totalPages
+        }
+      });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -148,7 +159,9 @@ export class RequestController {
         return;
       }
 
-      const { status, data_inicio, data_fim, page = 1, limit = 20 } = req.query;
+      const { status, data_inicio, data_fim } = req.query;
+      const page = Math.max(parseInt(String(req.query.page ?? '1'), 10) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
 
       const filters = {
         status: status as string,
@@ -159,11 +172,20 @@ export class RequestController {
       const result = await this.requestService.listRequisicoesRecebidas(
         req.usuarioId,
         filters,
-        Number(page),
-        Number(limit)
+        page,
+        limit
       );
 
-      res.json(result);
+      res.json({
+        success: true,
+        data: result.data,
+        pagination: {
+          page: result.page,
+          limit: result.limit,
+          total: result.total,
+          totalPages: result.totalPages
+        }
+      });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -274,16 +296,6 @@ export class RequestController {
 
   private handleError(error: any, res: Response): void {
     logger.error('Erro no RequestController:', error);
-
-    if (error instanceof ValidationError) {
-      res.status(400).json({ success: false, error: error.message });
-    } else if (error instanceof NotFoundError) {
-      res.status(404).json({ success: false, error: error.message });
-    } else {
-      const message = process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Erro interno do servidor';
-      res.status(500).json({ success: false, error: message });
-    }
+    sendDomainError(error, res, 'REQUEST_CONTROLLER');
   }
 }

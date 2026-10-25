@@ -65,12 +65,6 @@ export const createEventoValidation = [
     .isIn(['desfile', 'workshop', 'casting', 'fashion_week', 'concurso', 'outro'])
     .withMessage('Tipo de evento inválido'),
 
-  body('vagas_disponiveis')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('Vagas deve ser um número positivo')
-    .toInt(),
-
   body('valor_ingresso')
     .optional()
     .isFloat({ min: 0 })
@@ -94,7 +88,21 @@ export const updateEventoValidation = [
 
   body('local')
     .optional()
-    .trim(),
+    .trim()
+    .isLength({ max: 255 })
+    .withMessage('Local deve ter no máximo 255 caracteres'),
+
+  body('latitude')
+    .optional({ values: 'null' })
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Latitude inválida')
+    .toFloat(),
+
+  body('longitude')
+    .optional({ values: 'null' })
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Longitude inválida')
+    .toFloat(),
 
   body('data_inicio')
     .optional()
@@ -121,11 +129,6 @@ export const updateEventoValidation = [
     .optional()
     .isIn(['ativo', 'cancelado', 'concluido'])
     .withMessage('Status inválido'),
-
-  body('vagas_disponiveis')
-    .optional()
-    .isInt({ min: 0 })
-    .toInt(),
 
   body('valor_ingresso')
     .optional()
@@ -164,11 +167,13 @@ export const listEventosValidation = [
   query('page')
     .optional()
     .isInt({ min: 1 })
+    .withMessage('page deve ser um inteiro >= 1')
     .toInt(),
 
   query('limit')
     .optional()
     .isInt({ min: 1, max: 100 })
+    .withMessage('limit deve estar entre 1 e 100')
     .toInt()
 ];
 
@@ -192,10 +197,12 @@ export const listParticipantesValidation = [
   query('page')
     .optional()
     .isInt({ min: 1 })
+    .withMessage('page deve ser um inteiro >= 1')
     .toInt(),
 
   query('limit')
     .optional()
     .isInt({ min: 1, max: 100 })
+    .withMessage('limit deve estar entre 1 e 100')
     .toInt()
 ];

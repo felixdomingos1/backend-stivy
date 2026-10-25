@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
+import multer from 'multer';
 import logger from '../utils/logger';
+import { getErrorStatus } from '../utils/errors';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -54,9 +56,9 @@ const errorMap: Record<string, { status: number; message: string }> = {
 };
 
 export const handleValidationErrors = (err: any): ValidationError[] | null => {
-  if (err.array && typeof err.array === 'function') {
+  if (err && err.array && typeof err.array === 'function') {
     return err.array().map((e: any) => ({
-      field: e.param,
+      field: e.path ?? e.param,
       message: e.msg
     }));
   }
@@ -64,38 +66,26 @@ export const handleValidationErrors = (err: any): ValidationError[] | null => {
 };
 
 export const handlePrismaError = (err: Prisma.PrismaClientKnownRequestError): { status: number; message: string; code?: string } => {
-  const errorConfig = errorMap[err.code];
-
-  if (errorConfig) {
-    return {
-      status: errorConfig.status,
-      message: errorConfig.message,
-      code: err.code
-    };
-  }
-
   if (err.code === 'P2002') {
-    const target = (err.meta?.target as string[])?.join(', ') || 'campo';
-    return {
-      status: 409,
-      message: `Já existe um registro com ${target}`,
-      code: err.code
-    };
+    const rawTarget = err.meta?.target;
+    const target = Array.isArray(rawTarget) ? rawTarget.join(', ') : (rawTarget as string) || 'campo';
+    return { status: 409, message: `Já existe um registro com ${target}`, code: err.code };
   }
 
   if (err.code === 'P2025') {
-    return {
-      status: 404,
-      message: 'Registro não encontrado',
-      code: err.code
-    };
+    return { status: 404, message: 'Registro não encontrado', code: err.code };
   }
 
-  return {
-    status: 400,
-    message: err.message,
-    code: err.code
-  };
+  if (err.code === 'P2003') {
+    return { status: 400, message: 'Referência inválida (registro relacionado não existe)', code: err.code };
+  }
+
+  const errorConfig = errorMap[err.code];
+  if (errorConfig) {
+    return { status: errorConfig.status, message: errorConfig.message, code: err.code };
+  }
+
+  return { status: 400, message: 'Erro na operação de base de dados', code: err.code };
 };
 
 export const handleJWTError = (err: any): { status: number; message: string } => {
@@ -105,126 +95,136 @@ export const handleJWTError = (err: any): { status: number; message: string } =>
   if (err.name === 'TokenExpiredError') {
     return { status: 401, message: 'Token expirado' };
   }
-  return { status: 401, message: 'Erro de autenticação' };
+  return { status: 401, message: 'Não autorizado' };
 };
 
+const MULTER_MENSAGENS: Record<string, { status: number; message: string }> = {
+  LIMIT_FILE_SIZE: { status: 413, message: 'Arquivo muito grande' },
+  LIMIT_FILE_COUNT: { status: 400, message: 'Número máximo de arquivos excedido' },
+  LIMIT_FIELD_COUNT: { status: 400, message: 'Demasiados campos no formulário' },
+  LIMIT_FIELD_KEY: { status: 400, message: 'Nome de campo demasiado longo' },
+  LIMIT_FIELD_VALUE: { status: 413, message: 'Valor de campo demasiado longo' },
+  LIMIT_PART_COUNT: { status: 400, message: 'Demasiadas partes no formulário' },
+  LIMIT_UNEXPECTED_FILE: { status: 400, message: 'Campo de arquivo inesperado ou tipo não permitido' },
+};
+
+/**
+ * Handler global de erros (4 parâmetros — obrigatório para o Express o reconhecer como error handler).
+ * Responde SEMPRE em JSON `{ success: false, error, errors? }`; nunca envia stack em produção.
+ */
 export const errorHandler = (
   err: any,
   req: Request,
   res: Response,
+  next: NextFunction
 ): void => {
-  logger.error({
-    message: err.message,
-    stack: err.stack,
-    url: req.url,
-    method: req.method,
-    ip: req.ip,
-    userAgent: req.get('user-agent'),
-    userId: (req as any).usuarioId,
-    body: process.env.NODE_ENV === 'development' ? req.body : undefined
-  });
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
 
-  if (err instanceof AppError) {
-    res.status(err.statusCode).json({
-      success: false,
-      error: err.message,
-      code: err.code,
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const send = (status: number, payload: Record<string, any>) => {
+    res.status(status).json({ success: false, ...payload });
+  };
+
+  // Erros de domínio (utils/errors.ts) e AppError
+  const domainStatus = getErrorStatus(err);
+  if (err instanceof AppError || domainStatus) {
+    const status = err instanceof AppError ? err.statusCode : domainStatus!;
+    if (status >= 500) logError(err, req);
+    send(status, { error: err.message, ...(err.code && typeof err.code === 'string' ? { code: err.code } : {}) });
+    return;
+  }
+
+  // JSON mal formado (express.json)
+  if (err instanceof SyntaxError && (err as any).type === 'entity.parse.failed') {
+    send(400, { error: 'JSON inválido' });
+    return;
+  }
+
+  // Corpo demasiado grande (express.json / urlencoded)
+  if (err?.type === 'entity.too.large') {
+    send(413, { error: 'Pedido demasiado grande' });
+    return;
+  }
+
+  // Multer
+  if (err instanceof multer.MulterError || (typeof err?.code === 'string' && err.code.startsWith('LIMIT_'))) {
+    const conf = MULTER_MENSAGENS[err.code] ?? { status: 400, message: 'Erro no upload de arquivo' };
+    send(conf.status, {
+      error: conf.message,
+      ...(err.code === 'LIMIT_FILE_SIZE' && process.env.MAX_FILE_SIZE ? { maxSize: Number(process.env.MAX_FILE_SIZE) } : {})
     });
     return;
   }
 
   const validationErrors = handleValidationErrors(err);
   if (validationErrors) {
-    res.status(400).json({
-      success: false,
-      error: 'Erro de validação',
-      errors: validationErrors
-    });
+    send(400, { error: validationErrors[0]?.message || 'Erro de validação', errors: validationErrors });
     return;
   }
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     const { status, message, code } = handlePrismaError(err);
-    res.status(status).json({
-      success: false,
-      error: message,
-      code,
-      ...(process.env.NODE_ENV === 'development' && { prismaCode: err.code })
-    });
-    return;
-  }
-
-  if (err instanceof Prisma.PrismaClientInitializationError) {
-    res.status(500).json({
-      success: false,
-      error: 'Erro de conexão com o banco de dados'
-    });
+    if (status >= 500) logError(err, req);
+    send(status, { error: message, code });
     return;
   }
 
   if (err instanceof Prisma.PrismaClientValidationError) {
-    res.status(400).json({
-      success: false,
-      error: 'Dados inválidos para a operação'
-    });
+    logError(err, req);
+    send(400, { error: 'Dados inválidos para a operação' });
     return;
   }
 
-  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+  if (err instanceof Prisma.PrismaClientInitializationError) {
+    logError(err, req);
+    send(503, { error: 'Erro de conexão com o banco de dados' });
+    return;
+  }
+
+  if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
     const { status, message } = handleJWTError(err);
-    res.status(status).json({
-      success: false,
-      error: message
-    });
+    send(status, { error: message });
     return;
   }
 
-  if (err instanceof SyntaxError && 'body' in err) {
-    res.status(400).json({
-      success: false,
-      error: 'JSON inválido'
-    });
+  if (err?.message === 'Rate limit exceeded') {
+    send(429, { error: 'Muitas requisições. Tente novamente mais tarde' });
     return;
   }
 
-  if (err.code === 'LIMIT_FILE_SIZE') {
-    res.status(400).json({
-      success: false,
-      error: 'Arquivo muito grande',
-      maxSize: process.env.MAX_FILE_SIZE
-    });
+  // Erros HTTP genéricos (ex.: http-errors / body-parser) com status 4xx explícito
+  const explicitStatus = Number(err?.status || err?.statusCode);
+  if (explicitStatus >= 400 && explicitStatus < 500) {
+    send(explicitStatus, { error: err.expose === false ? 'Pedido inválido' : (err.message || 'Pedido inválido') });
     return;
   }
 
-  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-    res.status(400).json({
-      success: false,
-      error: 'Tipo de arquivo não permitido'
-    });
-    return;
-  }
-
-  if (err.message === 'Rate limit exceeded') {
-    res.status(429).json({
-      success: false,
-      error: 'Muitas requisições. Tente novamente mais tarde'
-    });
-    return;
-  }
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  res.status(err.status || 500).json({
-    success: false,
-    error: isDevelopment ? err.message : 'Erro interno do servidor',
-    ...(isDevelopment && { stack: err.stack })
+  logError(err, req);
+  send(500, {
+    error: isDevelopment ? (err?.message || 'Erro interno do servidor') : 'Erro interno do servidor',
+    ...(isDevelopment && err?.stack ? { stack: err.stack } : {})
   });
 };
 
-export const notFoundHandler = (req: Request, res: Response) => {
+const logError = (err: any, req: Request) => {
+  logger.error({
+    message: err?.message,
+    stack: err?.stack,
+    url: req.originalUrl || req.url,
+    method: req.method,
+    ip: req.ip,
+    userId: (req as any).usuarioId,
+  });
+};
+
+export const notFoundHandler = (req: Request, res: Response, _next?: NextFunction) => {
   res.status(404).json({
     success: false,
-    error: `Rota não encontrada: ${req.method} ${req.url}`,
-    path: req.url,
+    error: `Rota não encontrada: ${req.method} ${req.originalUrl || req.url}`,
+    path: req.originalUrl || req.url,
     method: req.method
   });
 };

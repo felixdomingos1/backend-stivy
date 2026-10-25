@@ -16,7 +16,7 @@ export const autenticar = async (
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ error: 'Token não fornecido' });
+      res.status(401).json({ success: false, error: 'Não autorizado' });
       return;
     }
 
@@ -35,7 +35,7 @@ export const autenticar = async (
     });
 
     if (!usuario || usuario.status !== 'ativo') {
-      res.status(401).json({ error: 'Usuário inválido ou inativo' });
+      res.status(401).json({ success: false, error: 'Não autorizado' });
       return;
     }
 
@@ -44,14 +44,42 @@ export const autenticar = async (
 
     next();
   } catch (error: any) {
-    if (error.name === 'JsonWebTokenError') {
-      res.status(401).json({ error: 'Token inválido' });
-    } else if (error.name === 'TokenExpiredError') {
-      res.status(401).json({ error: 'Token expirado' });
+    if (error.name === 'TokenExpiredError') {
+      res.status(401).json({ success: false, error: 'Token expirado' });
+    } else if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
+      res.status(401).json({ success: false, error: 'Token inválido' });
     } else {
-      res.status(500).json({ error: 'Erro ao autenticar' });
+      res.status(500).json({ success: false, error: 'Erro ao autenticar' });
     }
   }
+};
+
+/**
+ * Autenticação opcional: se houver um Bearer token válido de um utilizador activo,
+ * preenche req.usuarioId/req.usuario; caso contrário segue como anónimo (nunca responde 401).
+ */
+export const autenticarOpcional = async (
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const decoded = verificarToken(authHeader.split(' ')[1]);
+      const usuario = await prisma.usuario.findUnique({
+        where: { id_usuario: decoded.id },
+        select: { id_usuario: true, nome: true, email: true, tipo: true, status: true }
+      });
+      if (usuario && usuario.status === 'ativo') {
+        req.usuarioId = usuario.id_usuario;
+        req.usuario = usuario;
+      }
+    }
+  } catch {
+    // token inválido/expirado: tratar como anónimo
+  }
+  next();
 };
 
 export const verificarFazedor = async (
@@ -65,7 +93,7 @@ export const verificarFazedor = async (
     });
 
     if (!fazedor) {
-      res.status(403).json({ error: 'Acesso restrito a fazedores de moda' });
+      res.status(403).json({ success: false, error: 'Acesso restrito a fazedores de moda' });
       return;
     }
 
@@ -74,14 +102,14 @@ export const verificarFazedor = async (
 
     next();
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao verificar permissões' });
+    res.status(500).json({ success: false, error: 'Erro ao verificar permissões' });
   }
 };
 
 export const verificarAdmin = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.usuarioId) {
-      res.status(401).json({ error: 'Não autorizado' });
+      res.status(401).json({ success: false, error: 'Não autorizado' });
       return;
     }
 
@@ -91,12 +119,12 @@ export const verificarAdmin = async (req: AuthRequest, res: Response, next: Next
     });
 
     if (!user || user.tipo !== 'sistem_admin') {
-      res.status(403).json({ error: 'Acesso negado. Apenas administradores.' });
+      res.status(403).json({ success: false, error: 'Acesso negado. Apenas administradores.' });
       return;
     }
 
     next();
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao verificar permissões' });
+    res.status(500).json({ success: false, error: 'Erro ao verificar permissões' });
   }
 };

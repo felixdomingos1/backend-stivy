@@ -4,7 +4,8 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { ChatRepository } from '../repositories/chat.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { ChatService } from '../services/chat.service';
-import { NotFoundError, ValidationError } from '../utils/errors';
+import { cloudinaryService } from '../services/cloudinary.service';
+import { sendDomainError } from '../services/authorization.service';
 import logger from '../utils/logger';
 
 export class ChatController {
@@ -51,11 +52,11 @@ export class ChatController {
       const { tipo, titulo, participantes } = req.body;
 
       const conversa = await this.chatService.criarConversa(
-        { tipo, titulo, participantes },
+        { tipo: tipo || 'direct', titulo, participantes },
         req.usuarioId
       );
 
-      res.status(201).json({
+      res.status(conversa.reutilizada ? 200 : 201).json({
         success: true,
         data: conversa,
         timestamp: new Date().toISOString(),
@@ -106,14 +107,26 @@ export class ChatController {
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { conteudo, tipo } = req.body;
-      const io = req.app.get('io');
+
+      let midiaUrl: string | null = null;
+      if (req.file) {
+        // Verifica participação antes de gastar upload
+        await this.chatService.buscarConversa(id, req.usuarioId);
+        const upload = await cloudinaryService.uploadBuffer(req.file.buffer, {
+          folder: `chat/${id}`,
+          quality: 85,
+          width: 1600,
+          height: 1600,
+        });
+        midiaUrl = upload.secure_url;
+      }
 
       const mensagem = await this.chatService.enviarMensagem(
         id,
         req.usuarioId,
         conteudo,
-        tipo,
-        io
+        midiaUrl ? 'imagem' : (tipo || 'texto'),
+        midiaUrl
       );
 
       res.status(201).json({
@@ -140,14 +153,21 @@ export class ChatController {
       }
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const page = req.query.page ? Number(req.query.page) : 1;
-      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      const limit = req.query.limit ? Number(req.query.limit) : 30;
+      let before: Date | undefined;
+      if (req.query.before) {
+        before = new Date(String(req.query.before));
+        if (isNaN(before.getTime())) {
+          res.status(400).json({ success: false, error: 'Parâmetro before inválido (use ISO 8601)' });
+          return;
+        }
+      }
 
       const result = await this.chatService.listarMensagens(
         id,
         req.usuarioId,
-        page,
-        limit
+        limit,
+        before
       );
 
       res.status(200).json({
@@ -175,8 +195,7 @@ export class ChatController {
       }
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const io = req.app.get('io');
-      const mensagem = await this.chatService.marcarMensagemComoLida(id, req.usuarioId, io);
+      const mensagem = await this.chatService.marcarMensagemComoLida(id, req.usuarioId);
 
       res.status(200).json({
         success: true,
@@ -203,8 +222,7 @@ export class ChatController {
       }
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const io = req.app.get('io');
-      const result = await this.chatService.marcarTudoComoLido(id, req.usuarioId, io);
+      const result = await this.chatService.marcarTudoComoLido(id, req.usuarioId);
 
       res.status(200).json({
         success: true,
@@ -261,19 +279,22 @@ export class ChatController {
     }
   }
 
+  async listarContatos(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+      const contatos = await this.chatService.listarContatos(req.usuarioId, q);
+      res.status(200).json({ success: true, data: contatos });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   private handleError(error: any, res: Response): void {
     logger.error('Erro no ChatController:', error);
-
-    if (error instanceof ValidationError) {
-      res.status(400).json({ success: false, error: error.message });
-    } else if (error instanceof NotFoundError) {
-      res.status(404).json({ success: false, error: error.message });
-    } else {
-      const message =
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Erro interno do servidor';
-      res.status(500).json({ success: false, error: message });
-    }
+    sendDomainError(error, res, 'CHAT_CONTROLLER');
   }
 }

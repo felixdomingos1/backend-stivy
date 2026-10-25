@@ -2,10 +2,11 @@ import { AuthService } from '../../../services/auth.service';
 import { UserRepository } from '../../../repositories/user.repository';
 import { FazedorRepository } from '../../../repositories/fazedor.repository';
 import { hashSenha, compararSenha } from '../../../utils/bcrypt';
-import { gerarToken, generateRefreshToken } from '../../../utils/jwt';
+import { gerarToken, generateRefreshToken, revokeAllUserTokens } from '../../../utils/jwt';
 import { EmailService } from '../../../services/email.service';
 import { OTPService } from '../../../services/otp.service';
-import { ValidationError, AuthenticationError, AuthorizationError } from '../../../utils/errors';
+import { ValidationError, AuthenticationError } from '../../../utils/errors';
+import { MSG_RECUPERACAO_ENVIADA, MSG_CODIGO_INVALIDO } from '../../../services/auth.service';
 import { buildTestUser, buildTestFazedor } from '../../helpers';
 
 jest.mock('../../../utils/bcrypt');
@@ -234,7 +235,7 @@ describe('AuthService', () => {
       });
     });
 
-    it('should throw AuthorizationError if fazedor type is missing for fazedor users', async () => {
+    it('should throw ValidationError if fazedor type is missing for fazedor users', async () => {
       const fazedorDto = {
         ...registerDto,
         tipo: 'fazedor' as const,
@@ -243,7 +244,7 @@ describe('AuthService', () => {
 
       userRepository.findByEmail.mockResolvedValue(null);
 
-      await expect(authService.register(fazedorDto)).rejects.toThrow(AuthorizationError);
+      await expect(authService.register(fazedorDto)).rejects.toThrow(ValidationError);
       await expect(authService.register(fazedorDto)).rejects.toThrow('Precisas enviar o tipo de fazedor');
     });
   });
@@ -252,7 +253,7 @@ describe('AuthService', () => {
     const verifyDto = { userId: mockUser.id_usuario, codigo: '123456' };
 
     it('should verify email with valid code', async () => {
-      userRepository.findById.mockResolvedValue(mockUser as any);
+      userRepository.findByIdComplete.mockResolvedValue(mockUser as any);
       otpService.isOTPValid.mockReturnValue(true);
       userRepository.markEmailAsVerified.mockResolvedValue();
       fazedorRepository.findFazedorByUserId.mockResolvedValue(null);
@@ -266,20 +267,20 @@ describe('AuthService', () => {
     });
 
     it('should throw ValidationError if user is not found', async () => {
-      userRepository.findById.mockResolvedValue(null);
+      userRepository.findByIdComplete.mockResolvedValue(null);
 
       await expect(authService.verifyEmail(verifyDto)).rejects.toThrow(ValidationError);
     });
 
     it('should throw ValidationError if email is already verified', async () => {
-      userRepository.findById.mockResolvedValue(mockVerifiedUser as any);
+      userRepository.findByIdComplete.mockResolvedValue(mockVerifiedUser as any);
 
       await expect(authService.verifyEmail(verifyDto)).rejects.toThrow(ValidationError);
       await expect(authService.verifyEmail(verifyDto)).rejects.toThrow('Email já verificado');
     });
 
     it('should throw ValidationError if code is invalid', async () => {
-      userRepository.findById.mockResolvedValue(mockUser as any);
+      userRepository.findByIdComplete.mockResolvedValue(mockUser as any);
       otpService.isOTPValid.mockReturnValue(false);
 
       await expect(authService.verifyEmail(verifyDto)).rejects.toThrow(ValidationError);
@@ -291,12 +292,91 @@ describe('AuthService', () => {
       const userWithMaxAttempts = buildTestUser({
         verification_attempts: 5,
       });
-      userRepository.findById.mockResolvedValue(userWithMaxAttempts as any);
+      userRepository.findByIdComplete.mockResolvedValue(userWithMaxAttempts as any);
 
       await expect(authService.verifyEmail(verifyDto)).rejects.toThrow(ValidationError);
       await expect(authService.verifyEmail(verifyDto)).rejects.toThrow(
         'Número máximo de tentativas excedido. Solicite um novo código.'
       );
+    });
+  });
+
+  describe('login (isVerified)', () => {
+    it('should allow login for unverified email and flag isVerified=false', async () => {
+      userRepository.findByEmail.mockResolvedValue(buildTestUser({ email_verificado: false }) as any);
+      fazedorRepository.findFazedorByUserId.mockResolvedValue(null);
+
+      const result = await authService.login({ email: 'test@stivy.com', senha: 'x' });
+
+      expect(result.isVerified).toBe(false);
+      expect(result.usuario.email_verificado).toBe(false);
+      expect(result.usuario).not.toHaveProperty('senha_hash');
+      expect(MockedGerarToken).toHaveBeenCalledWith(expect.objectContaining({ isVerified: false }));
+    });
+  });
+
+  describe('requestPasswordReset', () => {
+    it('should return the same message when the email does not exist', async () => {
+      userRepository.findByEmail.mockResolvedValue(null);
+      const result = await authService.requestPasswordReset('nao@existe.com');
+      expect(result.message).toBe(MSG_RECUPERACAO_ENVIADA);
+      expect(emailService.sendPasswordResetOTPEmail).not.toHaveBeenCalled();
+    });
+
+    it('should return the same message when the email exists', async () => {
+      userRepository.findByEmail.mockResolvedValue(mockVerifiedUser as any);
+      const result = await authService.requestPasswordReset('test@stivy.com');
+      expect(result.message).toBe(MSG_RECUPERACAO_ENVIADA);
+      expect(emailService.sendPasswordResetOTPEmail).toHaveBeenCalled();
+    });
+
+    it('should not leak email send failures', async () => {
+      userRepository.findByEmail.mockResolvedValue(mockVerifiedUser as any);
+      emailService.sendPasswordResetOTPEmail.mockRejectedValue(new Error('smtp down'));
+      await expect(authService.requestPasswordReset('test@stivy.com')).resolves.toEqual({ message: MSG_RECUPERACAO_ENVIADA });
+    });
+  });
+
+  describe('resetPasswordWithOTP', () => {
+    const dto = { email: 'test@stivy.com', codigo: '123456', nova_senha: 'Nova1234' };
+    const userComCodigo = buildTestUser({
+      reset_password_code: '123456',
+      reset_password_expira: new Date(Date.now() + 600000),
+      reset_password_attempts: 0,
+    });
+
+    it('should reset password, clear OTP and revoke all refresh tokens', async () => {
+      userRepository.findByEmail.mockResolvedValue(userComCodigo as any);
+      otpService.isOTPValid.mockReturnValue(true);
+
+      await authService.resetPasswordWithOTP(dto);
+
+      expect(userRepository.updatePassword).toHaveBeenCalledWith(userComCodigo.id_usuario, '$2a$10$hashedpassword');
+      expect(userRepository.clearPasswordResetOTP).toHaveBeenCalled();
+      expect(revokeAllUserTokens).toHaveBeenCalledWith(userComCodigo.id_usuario);
+    });
+
+    it('should use a constant error for unknown email', async () => {
+      userRepository.findByEmail.mockResolvedValue(null);
+      await expect(authService.resetPasswordWithOTP(dto)).rejects.toThrow(MSG_CODIGO_INVALIDO);
+    });
+
+    it('should count attempts and invalidate the code at the 5th failure', async () => {
+      userRepository.findByEmail.mockResolvedValue(buildTestUser({ ...userComCodigo, reset_password_attempts: 4 }) as any);
+      otpService.isOTPValid.mockReturnValue(false);
+      userRepository.incrementResetPasswordAttempts.mockResolvedValue(5 as any);
+
+      await expect(authService.resetPasswordWithOTP(dto)).rejects.toThrow(MSG_CODIGO_INVALIDO);
+      expect(userRepository.clearPasswordResetOTP).toHaveBeenCalledWith('test@stivy.com');
+      expect(userRepository.updatePassword).not.toHaveBeenCalled();
+    });
+
+    it('should reject when attempts already exhausted even with the right code', async () => {
+      userRepository.findByEmail.mockResolvedValue(buildTestUser({ ...userComCodigo, reset_password_attempts: 5 }) as any);
+      otpService.isOTPValid.mockReturnValue(true);
+
+      await expect(authService.resetPasswordWithOTP(dto)).rejects.toThrow(MSG_CODIGO_INVALIDO);
+      expect(userRepository.updatePassword).not.toHaveBeenCalled();
     });
   });
 });

@@ -5,79 +5,95 @@ let redisClient: ReturnType<typeof createClient> | null = null;
 let isConnected = false;
 let connectionPromise: Promise<void> | null = null;
 
+const CONNECT_TIMEOUT_MS = parseInt(process.env.REDIS_CONNECT_TIMEOUT_MS || '5000', 10);
+
+/**
+ * Liga ao Redis. NUNCA lança: se o Redis estiver em baixo devolve false e o servidor
+ * continua (cache desactivada, rate limit em memória). O cliente continua a tentar
+ * reconectar em background (backoff até 30s) e passa a ser usado quando ficar pronto.
+ */
 export const connectRedis = async (): Promise<boolean> => {
   if (isConnected && redisClient?.isReady) {
-    logger.info('[REDIS] ✅ Já conectado');
     return true;
   }
 
   if (connectionPromise) {
-    logger.info('[REDIS] ⏳ Aguardando conexão existente...');
     await connectionPromise;
-    return isConnected;
+    return isRedisReady();
   }
 
-  logger.info('[REDIS] 🔄 Iniciando nova conexão...');
-  logger.info(`[REDIS] 📡 Host: ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`);
+  if (!redisClient) {
+    logger.info(`[REDIS] A ligar a ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`);
 
-  redisClient = createClient({
-    socket: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      reconnectStrategy: (retries) => {
-        logger.warn(`[REDIS] 🔄 Tentativa de reconexão: ${retries}`);
-        if (retries > 10) {
-          return new Error('Max reconnection attempts reached');
-        }
-        return Math.min(retries * 100, 3000);
-      },
-      connectTimeout: 10000
-    }
-  });
+    let ultimoErro = '';
+    redisClient = createClient({
+      ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
+      database: parseInt(process.env.REDIS_DB || '0', 10),
+      socket: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+        reconnectStrategy: (retries) => {
+          if (retries === 1 || retries % 20 === 0) {
+            logger.warn(`[REDIS] Tentativa de reconexão: ${retries}`);
+          }
+          return Math.min(retries * 200, 30000);
+        },
+        connectTimeout: 10000
+      }
+    });
 
-  redisClient.on('connect', () => {
-    logger.info('[REDIS] 📡 Cliente conectado ao servidor');
-  });
+    redisClient.on('ready', () => {
+      logger.info('[REDIS] Redis pronto para uso');
+      isConnected = true;
+      ultimoErro = '';
+    });
 
-  redisClient.on('ready', () => {
-    logger.info('[REDIS] ✅ Redis pronto para uso!');
-    isConnected = true;
-  });
+    redisClient.on('error', (err) => {
+      // Evitar inundar os logs com o mesmo erro a cada tentativa de reconexão
+      if (err.message !== ultimoErro) {
+        logger.error(`[REDIS] Erro: ${err.message}`);
+        ultimoErro = err.message;
+      }
+      isConnected = false;
+    });
 
-  redisClient.on('error', (err) => {
-    logger.error(`[REDIS] ❌ Erro: ${err.message}`);
-    isConnected = false;
-  });
+    redisClient.on('end', () => {
+      logger.info('[REDIS] Conexão encerrada');
+      isConnected = false;
+    });
+  }
 
-  redisClient.on('end', () => {
-    logger.info('[REDIS] 🔌 Conexão encerrada');
-    isConnected = false;
-  });
-
+  const client = redisClient;
   connectionPromise = (async () => {
     try {
-      await redisClient!.connect();
+      const connectPromise = client.isOpen ? Promise.resolve() : client.connect().then(() => undefined);
+      // Se a ligação demorar, não bloquear o arranque; continua em background.
+      connectPromise.catch((error: any) => logger.error(`[REDIS] Falha na conexão: ${error?.message}`));
 
-      await redisClient!.set('test:connection', 'ok');
-      const test = await redisClient!.get('test:connection');
+      let timer: NodeJS.Timeout | undefined;
+      const timeout = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), CONNECT_TIMEOUT_MS);
+      });
+      const resultado = await Promise.race([connectPromise.then(() => 'ok' as const), timeout]);
+      if (timer) clearTimeout(timer);
 
-      if (test === 'ok') {
-        logger.info('[REDIS] ✅ Teste de conexão bem sucedido!');
-        isConnected = true;
-      } else {
-        throw new Error('Teste de conexão falhou');
+      if (resultado === 'timeout') {
+        logger.warn('[REDIS] Sem ligação dentro do tempo limite; a continuar sem Redis (reconexão em background).');
+        isConnected = false;
+        return;
       }
+
+      isConnected = client.isReady;
     } catch (error: any) {
-      logger.error(`[REDIS] ❌ Falha na conexão: ${error.message}`);
+      logger.error(`[REDIS] Falha na conexão: ${error?.message}`);
       isConnected = false;
-      throw error;
     } finally {
       connectionPromise = null;
     }
   })();
 
   await connectionPromise;
-  return isConnected;
+  return isRedisReady();
 };
 
 export const getRedisClient = () => {
@@ -93,87 +109,142 @@ export const isRedisReady = (): boolean => {
 
 export const disconnectRedis = async (): Promise<void> => {
   if (redisClient) {
-    await redisClient.quit();
+    try {
+      if (redisClient.isOpen) await redisClient.quit();
+    } catch (error: any) {
+      logger.warn(`[REDIS] Erro ao desligar: ${error?.message}`);
+    }
     redisClient = null;
     isConnected = false;
     logger.info('[REDIS] 👋 Desconectado');
   }
 };
 
+type RateLimitResult = {
+  allowed: boolean;
+  remaining: number;
+  resetAt: number;
+  current: number;
+};
+
+/**
+ * Limitador em memória (janela deslizante) usado quando o Redis não está disponível.
+ * Não é partilhado entre instâncias, mas evita "permitir tudo" quando o Redis cai.
+ */
+export class InMemoryRateLimiter {
+  private hits = new Map<string, number[]>();
+  private ultimaLimpeza = Date.now();
+  private static readonly MAX_CHAVES = 50000;
+
+  checkLimit(key: string, maxRequests: number, windowSeconds: number): RateLimitResult {
+    const agoraMs = Date.now();
+    const inicioJanela = agoraMs - windowSeconds * 1000;
+    this.limparSeNecessario(agoraMs);
+
+    const lista = (this.hits.get(key) || []).filter(t => t > inicioJanela);
+    const current = lista.length;
+    const allowed = current < maxRequests;
+
+    if (allowed) {
+      lista.push(agoraMs);
+    }
+    if (lista.length > 0) {
+      this.hits.set(key, lista);
+    } else {
+      this.hits.delete(key);
+    }
+
+    const resetAt = Math.floor(((lista[0] ?? agoraMs) + windowSeconds * 1000) / 1000);
+    return {
+      allowed,
+      remaining: Math.max(0, maxRequests - lista.length),
+      resetAt,
+      current,
+    };
+  }
+
+  reset(key: string): void {
+    this.hits.delete(key);
+  }
+
+  count(key: string): number {
+    return this.hits.get(key)?.length ?? 0;
+  }
+
+  private limparSeNecessario(agoraMs: number): void {
+    // Limpeza periódica (1 min) ou quando o mapa cresce demais — evita fuga de memória
+    if (agoraMs - this.ultimaLimpeza < 60000 && this.hits.size < InMemoryRateLimiter.MAX_CHAVES) return;
+    this.ultimaLimpeza = agoraMs;
+    // Janela máxima assumida para limpeza: 1h
+    const limite = agoraMs - 3600 * 1000;
+    for (const [k, v] of this.hits) {
+      if (!v.length || v[v.length - 1] < limite) this.hits.delete(k);
+    }
+    if (this.hits.size >= InMemoryRateLimiter.MAX_CHAVES) {
+      this.hits.clear();
+    }
+  }
+}
+
 export class RateLimiter {
   private readonly prefix = 'rate_limit:';
+  private readonly memoria = new InMemoryRateLimiter();
 
-  async checkLimit(key: string, maxRequests: number, windowSeconds: number): Promise<{
-    allowed: boolean;
-    remaining: number;
-    resetAt: number;
-    current: number;
-  }> {
+  async checkLimit(key: string, maxRequests: number, windowSeconds: number): Promise<RateLimitResult> {
     if (!isRedisReady()) {
-      logger.warn(`[RATE-LIMIT] Redis não pronto, permitindo requisição para ${key}`);
-      return {
-        allowed: true,
-        remaining: maxRequests,
-        resetAt: Math.floor(Date.now() / 1000) + windowSeconds,
-        current: 0
-      };
+      return this.memoria.checkLimit(key, maxRequests, windowSeconds);
     }
 
     try {
       const client = getRedisClient();
       const fullKey = `${this.prefix}${key}`;
-      const now = Math.floor(Date.now() / 1000);
-      const windowStart = now - windowSeconds;
-      await client.zRemRangeByScore(fullKey, 0, windowStart);
+      const nowMs = Date.now();
+      const now = Math.floor(nowMs / 1000);
+      const windowStartMs = nowMs - windowSeconds * 1000;
+      await client.zRemRangeByScore(fullKey, 0, windowStartMs);
       const current = await client.zCard(fullKey);
-      const remaining = Math.max(0, maxRequests - current);
       const allowed = current < maxRequests;
 
       if (allowed) {
-        const member = `${now}:${Math.random().toString(36).substring(2, 10)}`;
-        await client.zAdd(fullKey, { score: now, value: member });
+        const member = `${nowMs}:${Math.random().toString(36).substring(2, 10)}`;
+        await client.zAdd(fullKey, { score: nowMs, value: member });
         await client.expire(fullKey, windowSeconds);
       }
 
       const oldest = await client.zRangeWithScores(fullKey, 0, 0);
       const resetAt = oldest.length > 0
-        ? Math.floor(oldest[0].score) + windowSeconds
+        ? Math.floor(oldest[0].score / 1000) + windowSeconds
         : now + windowSeconds;
+      const remaining = Math.max(0, maxRequests - current - (allowed ? 1 : 0));
 
-      logger.info(`[RATE-LIMIT] ${key}: ${current}/${maxRequests} (remaining: ${remaining})`);
+      logger.debug(`[RATE-LIMIT] ${key}: ${current}/${maxRequests}`);
 
       return { allowed, remaining, resetAt, current };
     } catch (error) {
-      logger.error(`[RATE-LIMIT] Erro ao verificar limite para ${key}:`, error);
-      return {
-        allowed: true,
-        remaining: maxRequests,
-        resetAt: Math.floor(Date.now() / 1000) + windowSeconds,
-        current: 0
-      };
+      logger.error(`[RATE-LIMIT] Erro no Redis para ${key}; a usar limitador em memória`, error);
+      return this.memoria.checkLimit(key, maxRequests, windowSeconds);
     }
   }
 
   async resetLimit(key: string): Promise<void> {
+    this.memoria.reset(key);
     if (!isRedisReady()) return;
 
     try {
       const client = getRedisClient();
-      const fullKey = `${this.prefix}${key}`;
-      await client.del(fullKey);
-      logger.info(`[RATE-LIMIT] Resetado para ${key}`);
+      await client.del(`${this.prefix}${key}`);
+      logger.debug(`[RATE-LIMIT] Resetado para ${key}`);
     } catch (error) {
       logger.error(`[RATE-LIMIT] Erro ao resetar ${key}:`, error);
     }
   }
 
   async getCurrentCount(key: string): Promise<number> {
-    if (!isRedisReady()) return 0;
+    if (!isRedisReady()) return this.memoria.count(key);
 
     try {
       const client = getRedisClient();
-      const fullKey = `${this.prefix}${key}`;
-      return await client.zCard(fullKey);
+      return await client.zCard(`${this.prefix}${key}`);
     } catch (error) {
       return 0;
     }
@@ -187,7 +258,7 @@ export class CacheService {
     try {
       const client = getRedisClient();
       await client.setEx(key, ttl, JSON.stringify(value));
-      logger.info(`[CACHE] SET ${key} (TTL: ${ttl}s)`);
+      logger.debug(`[CACHE] SET ${key} (TTL: ${ttl}s)`);
       return true;
     } catch (error) {
       logger.error(`[CACHE] Erro ao setar ${key}:`, error);
@@ -202,10 +273,10 @@ export class CacheService {
       const client = getRedisClient();
       const data = await client.get(key);
       if (!data) {
-        logger.info(`[CACHE] MISS ${key}`);
+        logger.debug(`[CACHE] MISS ${key}`);
         return null;
       }
-      logger.info(`[CACHE] HIT ${key}`);
+      logger.debug(`[CACHE] HIT ${key}`);
       return JSON.parse(data) as T;
     } catch (error) {
       logger.error(`[CACHE] Erro ao obter ${key}:`, error);
@@ -219,25 +290,44 @@ export class CacheService {
     try {
       const client = getRedisClient();
       await client.del(key);
-      logger.info(`[CACHE] DEL ${key}`);
+      logger.debug(`[CACHE] DEL ${key}`);
       return true;
     } catch (error) {
       return false;
     }
   }
 
-  async delPattern(pattern: string): Promise<void> {
-    if (!isRedisReady()) return;
+  /**
+   * Itera chaves com SCAN (não bloqueante, ao contrário de KEYS).
+   */
+  async scanKeys(pattern: string, count: number = 200): Promise<string[]> {
+    if (!isRedisReady()) return [];
+    const client = getRedisClient();
+    const keys: string[] = [];
+    for await (const lote of client.scanIterator({ MATCH: pattern, COUNT: count }) as AsyncIterable<string | string[]>) {
+      if (Array.isArray(lote)) keys.push(...lote);
+      else keys.push(lote);
+    }
+    return keys;
+  }
+
+  /** Apaga todas as chaves que correspondem ao padrão glob do Redis (usa SCAN + DEL em lotes). */
+  async delPattern(pattern: string): Promise<number> {
+    if (!isRedisReady()) return 0;
 
     try {
       const client = getRedisClient();
-      const keys = await client.keys(pattern);
-      if (keys.length > 0) {
-        await client.del(keys);
-        logger.info(`[CACHE] DEL pattern ${pattern} (${keys.length} keys)`);
+      const keys = await this.scanKeys(pattern);
+      for (let i = 0; i < keys.length; i += 500) {
+        await client.del(keys.slice(i, i + 500));
       }
+      if (keys.length > 0) {
+        logger.debug(`[CACHE] DEL pattern ${pattern} (${keys.length} keys)`);
+      }
+      return keys.length;
     } catch (error) {
       logger.error(`[CACHE] Erro ao deletar pattern ${pattern}:`, error);
+      return 0;
     }
   }
 

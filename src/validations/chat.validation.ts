@@ -2,6 +2,7 @@ import { body, param, query } from 'express-validator';
 
 export const createConversationValidation = [
   body('tipo')
+    .optional()
     .isIn(['direct', 'grupo'])
     .withMessage('Tipo deve ser direct ou grupo'),
 
@@ -25,17 +26,19 @@ export const sendMessageValidation = [
     .isUUID()
     .withMessage('ID da conversa inválido'),
 
+  // conteudo é opcional quando se envia uma imagem (multipart `imagem`); o serviço valida
   body('conteudo')
+    .optional({ values: 'null' })
+    .isString()
+    .withMessage('Conteúdo deve ser texto')
     .trim()
-    .notEmpty()
-    .withMessage('Conteúdo é obrigatório')
     .isLength({ max: 5000 })
     .withMessage('Conteúdo deve ter no máximo 5000 caracteres'),
 
   body('tipo')
     .optional()
-    .isIn(['texto', 'imagem', 'arquivo'])
-    .withMessage('Tipo deve ser texto, imagem ou arquivo'),
+    .isIn(['texto', 'imagem'])
+    .withMessage('Tipo deve ser texto ou imagem'),
 ];
 
 export const getConversationMessagesValidation = [
@@ -43,11 +46,10 @@ export const getConversationMessagesValidation = [
     .isUUID()
     .withMessage('ID da conversa inválido'),
 
-  query('page')
+  query('before')
     .optional()
-    .isInt({ min: 1 })
-    .toInt()
-    .withMessage('Página inválida'),
+    .isISO8601()
+    .withMessage('before deve ser uma data ISO 8601'),
 
   query('limit')
     .optional()

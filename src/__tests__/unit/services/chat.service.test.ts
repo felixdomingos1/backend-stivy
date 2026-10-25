@@ -2,6 +2,14 @@ import { ChatService } from '../../../services/chat.service';
 import { ChatRepository, CreateConversaData } from '../../../repositories/chat.repository';
 import { NotificacaoRepository } from '../../../repositories/notificacao.repository';
 import { ValidationError, NotFoundError } from '../../../utils/errors';
+import { ForbiddenError } from '../../../services/authorization.service';
+import { getIO } from '../../../config/socket';
+
+jest.mock('../../../config/socket', () => ({
+  getIO: jest.fn(() => null),
+  emitToUser: jest.fn(),
+  SocketEmitter: { isUserOnline: jest.fn(() => false) },
+}));
 
 jest.mock('../../../utils/logger', () => ({
   __esModule: true,
@@ -79,6 +87,8 @@ describe('ChatService', () => {
       getUnreadCount: jest.fn(),
       deleteConversation: jest.fn(),
       findParticipantByConversation: jest.fn(),
+      countExistingUsers: jest.fn().mockImplementation(async (ids: string[]) => ids.length),
+      countUnread: jest.fn().mockResolvedValue(0),
     } as any;
 
     notificacaoRepository = {
@@ -89,6 +99,7 @@ describe('ChatService', () => {
       markAllAsRead: jest.fn(),
       countUnread: jest.fn(),
       delete: jest.fn(),
+      createSafe: jest.fn().mockResolvedValue({}),
     } as any;
 
     chatService = new ChatService(chatRepository, notificacaoRepository);
@@ -192,8 +203,9 @@ describe('ChatService', () => {
         id_remetente: userId,
         conteudo: 'Hello!',
         tipo: 'texto',
+        midia_url: null,
       });
-      expect(notificacaoRepository.create).toHaveBeenCalledTimes(1);
+      expect(notificacaoRepository.createSafe).toHaveBeenCalledTimes(1);
     });
 
     it('should throw NotFoundError if conversation does not exist', async () => {
@@ -204,13 +216,13 @@ describe('ChatService', () => {
       ).rejects.toThrow(NotFoundError);
     });
 
-    it('should throw ValidationError if user is not a participant', async () => {
+    it('should throw ForbiddenError if user is not a participant', async () => {
       const nonParticipantId = '999e8400-e29b-41d4-a716-446655440999';
       chatRepository.findConversationById.mockResolvedValue(mockConversation as any);
 
       await expect(
         chatService.enviarMensagem(conversationId, nonParticipantId, 'Hello!')
-      ).rejects.toThrow(ValidationError);
+      ).rejects.toThrow(ForbiddenError);
       await expect(
         chatService.enviarMensagem(conversationId, nonParticipantId, 'Hello!')
       ).rejects.toThrow('Acesso negado');
@@ -226,10 +238,14 @@ describe('ChatService', () => {
       chatRepository.createMessage.mockResolvedValue(mockMessage as any);
       notificacaoRepository.create.mockResolvedValue({} as any);
 
-      await chatService.enviarMensagem(conversationId, userId, 'Hello!', 'texto', mockIo);
+      (getIO as jest.Mock).mockReturnValue(mockIo);
 
-      expect(mockIo.to).toHaveBeenCalledWith(`chat:${conversationId}`);
-      expect(mockIo.to).toHaveBeenCalledWith(`user:${userId2}`);
+      await chatService.enviarMensagem(conversationId, userId, 'Hello!', 'texto');
+
+      const salas = (mockIo.to as jest.Mock).mock.calls.flat(2);
+      expect(salas).toContain(`chat:${conversationId}`);
+      expect(salas).toContain(`user:${userId2}`);
+      (getIO as jest.Mock).mockReturnValue(null);
     });
   });
 
@@ -277,17 +293,14 @@ describe('ChatService', () => {
   describe('listarMensagens', () => {
     it('should list messages with pagination', async () => {
       chatRepository.findConversationById.mockResolvedValue(mockConversation as any);
-      chatRepository.findMessagesByConversation.mockResolvedValue({
-        messages: [mockMessage],
-        total: 1,
-      });
+      chatRepository.findMessagesByConversation.mockResolvedValue([mockMessage] as any);
 
-      const result = await chatService.listarMensagens(conversationId, userId, 1, 50);
+      const result = await chatService.listarMensagens(conversationId, userId, 50);
 
       expect(result.data).toHaveLength(1);
-      expect(result.pagination.page).toBe(1);
-      expect(result.pagination.total).toBe(1);
-      expect(result.pagination.totalPages).toBe(1);
+      expect(result.pagination.limit).toBe(50);
+      expect(result.pagination.has_more).toBe(false);
+      expect(result.pagination.next_before).toBeNull();
     });
 
     it('should throw NotFoundError if conversation does not exist', async () => {
@@ -298,28 +311,27 @@ describe('ChatService', () => {
       );
     });
 
-    it('should throw ValidationError if user is not a participant', async () => {
+    it('should throw ForbiddenError if user is not a participant', async () => {
       const nonParticipantId = '999e8400-e29b-41d4-a716-446655440999';
       chatRepository.findConversationById.mockResolvedValue(mockConversation as any);
 
       await expect(
         chatService.listarMensagens(conversationId, nonParticipantId)
-      ).rejects.toThrow(ValidationError);
+      ).rejects.toThrow(ForbiddenError);
     });
 
-    it('should return reversed messages (newest first for display)', async () => {
+    it('should return messages in chronological (asc) order', async () => {
       const oldMsg = { ...mockMessage, id_mensagem: 'old-msg', created_at: new Date('2025-12-31') };
       const newMsg = { ...mockMessage, id_mensagem: 'new-msg', created_at: new Date('2026-01-02') };
 
       chatRepository.findConversationById.mockResolvedValue(mockConversation as any);
-      chatRepository.findMessagesByConversation.mockResolvedValue({
-        messages: [oldMsg, newMsg],
-        total: 2,
-      });
+      // O repositório devolve a mais recente primeiro (desc); o serviço inverte para asc
+      chatRepository.findMessagesByConversation.mockResolvedValue([newMsg, oldMsg] as any);
 
       const result = await chatService.listarMensagens(conversationId, userId);
 
-      expect(result.data[0].id_mensagem).toBe('new-msg');
+      expect(result.data[0].id_mensagem).toBe('old-msg');
+      expect(result.data[1].id_mensagem).toBe('new-msg');
     });
   });
 });

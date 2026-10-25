@@ -59,6 +59,5 @@ export interface CreateEventoDto {
   data_inicio: Date;
   data_fim: Date;
   tipo_evento: 'desfile' | 'workshop' | 'casting' | 'fashion_week' | 'concurso' | 'outro';
-  vagas_disponiveis?: number;
   valor_ingresso?: number;
 }

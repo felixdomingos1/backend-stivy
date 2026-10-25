@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
-import { UserService } from '../services/user.service';
+import { UserService, UpdatePerfilInput } from '../services/user.service';
 import { UserRepository } from '../repositories/user.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
-import { UpdateUserDto, UpdatePasswordDto } from '../dtos/user.dto';
+import { UpdatePasswordDto } from '../dtos/user.dto';
 import { AuthRequest } from '../middleware/auth.middleware';
-import { ValidationError, AuthenticationError, NotFoundError } from '../utils/errors';
+import { getErrorStatus } from '../utils/errors';
 import logger from '../utils/logger';
 import { processUpload } from '../middleware/upload.middleware';
 import { cloudinaryService } from '../services/cloudinary.service';
@@ -22,7 +22,7 @@ export class UserController {
   async getPerfil(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -36,13 +36,15 @@ export class UserController {
     }
   }
 
-  async pegarTodos(_req: AuthRequest, res: Response): Promise<void> {
+  /** GET /users/todos — apenas admin (verificarAdmin em user.routes). Paginado (limit máx. 100). */
+  async pegarTodos(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const users = await this.userService.pegarTodos();
+      const page = Number(req.query.page) || 1;
+      const limit = Number(req.query.limit) || 20;
+      const result = await this.userService.pegarTodos(page, limit);
       res.json({
         success: true,
-        count: users.length,
-        data: users
+        data: result
       });
     } catch (error) {
       this.handleError(error, res);
@@ -53,16 +55,16 @@ export class UserController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
-      const dto: UpdateUserDto = req.body;
+      const dto: UpdatePerfilInput = req.body ?? {};
       const updatedUser = await this.userService.updateProfile(req.usuarioId, dto);
 
       res.json({
@@ -80,18 +82,18 @@ export class UserController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
       const { id_fazedor } = req.params;
       if (!id_fazedor || typeof id_fazedor != 'string') {
-        res.status(400).json({ error: 'ID do fazedor é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do fazedor é obrigatório' });
         return;
       }
 
@@ -120,13 +122,13 @@ export class UserController {
   async removerFavorito(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
       const { id_fazedor } = req.params;
       if (!id_fazedor || typeof id_fazedor != 'string') {
-        res.status(400).json({ error: 'ID do fazedor é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do fazedor é obrigatório' });
         return;
       }
 
@@ -144,7 +146,7 @@ export class UserController {
   async getMeusServicos(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -180,12 +182,12 @@ export class UserController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -204,12 +206,12 @@ export class UserController {
   async atualizarFotoPerfil(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
       if (!req.file) {
-        res.status(400).json({ error: 'Nenhuma imagem enviada' });
+        res.status(400).json({ success: false, error: 'Nenhuma imagem enviada' });
         return;
       }
 
@@ -220,13 +222,15 @@ export class UserController {
       });
 
       if (!uploadResult) {
-        res.status(400).json({ error: 'Erro ao fazer upload da imagem' });
+        res.status(400).json({ success: false, error: 'Erro ao fazer upload da imagem' });
         return;
       }
 
-      const user = await this.userService.getProfile(req.usuarioId);
-      if (user.foto_perfil_public_id) {
-        await cloudinaryService.deleteFile(user.foto_perfil_public_id);
+      const publicIdAntigo = await this.userService.getFotoPerfilPublicId(req.usuarioId);
+      if (publicIdAntigo && publicIdAntigo !== uploadResult.public_id) {
+        await cloudinaryService.deleteFile(publicIdAntigo).catch((err: any) =>
+          logger.warn(`Falha ao apagar foto antiga: ${err?.message}`)
+        );
       }
 
       const result = await this.userService.updateFotoPerfil(
@@ -251,7 +255,7 @@ export class UserController {
   async listarFavoritos(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -271,13 +275,13 @@ export class UserController {
   async seguirUsuario(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
       const { id } = req.params;
       if (!id) {
-        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do usuário é obrigatório' });
         return;
       }
 
@@ -295,13 +299,13 @@ export class UserController {
   async deixarSeguirUsuario(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
       const { id } = req.params;
       if (!id) {
-        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do usuário é obrigatório' });
         return;
       }
 
@@ -319,7 +323,7 @@ export class UserController {
   async getMeusSeguidores(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -338,7 +342,7 @@ export class UserController {
   async getQuemSigo(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -358,7 +362,7 @@ export class UserController {
     try {
       const { id } = req.params;
       if (!id) {
-        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do usuário é obrigatório' });
         return;
       }
 
@@ -377,7 +381,7 @@ export class UserController {
   async getEstatisticas(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -395,13 +399,13 @@ export class UserController {
   async verificarSeguindo(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
       const { id } = req.params;
       if (!id) {
-        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do usuário é obrigatório' });
         return;
       }
 
@@ -420,7 +424,7 @@ export class UserController {
     try {
       const { id } = req.params;
       if (!id) {
-        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do usuário é obrigatório' });
         return;
       }
 
@@ -439,7 +443,7 @@ export class UserController {
     try {
       const { id } = req.params;
       if (!id) {
-        res.status(400).json({ error: 'ID do usuário é obrigatório' });
+        res.status(400).json({ success: false, error: 'ID do usuário é obrigatório' });
         return;
       }
 
@@ -455,23 +459,18 @@ export class UserController {
   }
 
   private handleError(error: any, res: Response): void {
+    const status = getErrorStatus(error);
+    if (status) {
+      res.status(status).json({ success: false, error: error.message });
+      return;
+    }
+
     logger.error('Erro na requisição do usuário:', error);
 
-    if (error instanceof ValidationError) {
-      res.status(400).json({
-        success: false,
-        error: error.message
-      });
-    } else if (error instanceof AuthenticationError) {
-      res.status(401).json({
-        success: false,
-        error: error.message
-      });
-    } else if (error instanceof NotFoundError) {
-      res.status(404).json({
-        success: false,
-        error: error.message
-      });
+    if (error?.code === 'P2002') {
+      res.status(409).json({ success: false, error: 'Registro duplicado' });
+    } else if (error?.code === 'P2025') {
+      res.status(404).json({ success: false, error: 'Registro não encontrado' });
     } else {
       const message = process.env.NODE_ENV === 'development'
         ? error.message

@@ -19,4 +19,7 @@ router.delete('/usuarios/:id/deletar', AdminController.deletarUsuario);
 router.put('/usuarios/:id/bloquear', AdminController.bloquearUsuario);
 router.put('/usuarios/:id/desbloquear', AdminController.desbloquearUsuario);
 
+router.get('/denuncias', AdminController.listarDenuncias);
+router.put('/denuncias/:id', AdminController.atualizarDenuncia);
+
 export default router;

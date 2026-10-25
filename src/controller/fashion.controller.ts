@@ -15,12 +15,14 @@ import { FashionService } from '../services/fashion.service';
 import { PortfolioService } from '../services/portfolio.service';
 import { ServicoImagemService } from '../services/servico-imagem.service';
 import { ModeloService } from '../services/modelo.service';
-import { NotFoundError, ValidationError } from '../utils/errors';
+import { sendDomainError, parseGeoQuery, assertFazedorOwnsServico } from '../services/authorization.service';
 import logger from '../utils/logger';
 import { ServicoComentarioService } from '../services/servico-comentario.service';
 import { ServicoReacaoService } from '../services/servico-reacao.service';
 import { ServicoCompartilhamentoService } from '../services/servico-compartilhamento.service';
 import { ServicoCompartilhamentoRepository } from '../repositories/servico-compartilhamento.repository';
+import { ServicoDenunciaService } from '../services/servico-denuncia.service';
+import { ServicoDenunciaRepository } from '../repositories/servico-denuncia.repository';
 
 export class FashionController {
   private fashionService: FashionService;
@@ -30,6 +32,7 @@ export class FashionController {
   private servicoComentarioService: ServicoComentarioService;
   private servicoReacaoService: ServicoReacaoService;
   private servicoCompartilhamentoService: ServicoCompartilhamentoService;
+  private servicoDenunciaService: ServicoDenunciaService;
 
   constructor() {
     const servicoRepository = new ServicoRepository();
@@ -52,6 +55,7 @@ export class FashionController {
     this.servicoComentarioService = new ServicoComentarioService(servicoComentarioRepository, servicoRepository);
     this.servicoReacaoService = new ServicoReacaoService(servicoReacaoRepository);
     this.servicoCompartilhamentoService = new ServicoCompartilhamentoService(servicoCompartilhamentoRepository);
+    this.servicoDenunciaService = new ServicoDenunciaService(new ServicoDenunciaRepository(), servicoRepository);
   }
 
   criarServicoWithUpload = [
@@ -73,7 +77,8 @@ export class FashionController {
         return;
       }
 
-      const dto: CreateServicoDto = req.body;
+      const { titulo, descricao, categoria, valor, tempo_estimado } = req.body;
+      const dto: CreateServicoDto = { titulo, descricao, categoria, valor, tempo_estimado };
 
       if (req.file) {
         const uploadResult = await processUpload(req.file, 'servicos', {
@@ -96,8 +101,13 @@ export class FashionController {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const result = await this.fashionService.getServicoById(id);
+      const usuarioId = (req as AuthRequest).usuarioId;
+      const [reacoes, minhaReacao] = await Promise.all([
+        this.servicoReacaoService.getReacoesCount(id),
+        usuarioId ? this.servicoReacaoService.getUserReacao(id, usuarioId) : Promise.resolve(null)
+      ]);
 
-      res.json({ success: true, data: result });
+      res.json({ success: true, data: { ...result, reacoes, minha_reacao: minhaReacao } });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -131,11 +141,15 @@ export class FashionController {
 
       const result = await this.fashionService.listServicos(
         filters,
-        Number(page),
-        Number(limit)
+        Math.max(Number(page) || 1, 1),
+        Math.min(Math.max(Number(limit) || 20, 1), 100)
       );
 
-      res.json(result);
+      res.json({
+        success: true,
+        ...result,
+        pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+      });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -154,13 +168,33 @@ export class FashionController {
         return;
       }
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const dto: UpdateServicoDto = JSON.parse(req.body.data || '{}');
 
+      // Aceita multipart com `data` (JSON) ou campos directos
+      let raw: any = req.body ?? {};
+      if (typeof req.body?.data === 'string') {
+        try {
+          raw = JSON.parse(req.body.data || '{}');
+        } catch {
+          res.status(400).json({ success: false, error: 'Campo data deve conter JSON válido' });
+          return;
+        }
+      }
+      const dto: UpdateServicoDto = {
+        titulo: raw.titulo,
+        descricao: raw.descricao,
+        categoria: raw.categoria,
+        valor: raw.valor,
+        tempo_estimado: raw.tempo_estimado,
+        status: raw.status
+      };
+
+      // Verificar posse ANTES de qualquer operação no Cloudinary
+      await assertFazedorOwnsServico(req.usuarioId, id);
+
+      let imagemAntiga: string | null = null;
       if (req.file) {
         const servicoAtual = await this.fashionService.getServicoById(id);
-        if (servicoAtual.imagem_public_id) {
-          await cloudinaryService.deleteFile(servicoAtual.imagem_public_id);
-        }
+        imagemAntiga = servicoAtual.imagem_public_id ?? null;
 
         const uploadResult = await processUpload(req.file, 'servicos', {
           width: 800,
@@ -172,6 +206,11 @@ export class FashionController {
       }
 
       const result = await this.fashionService.updateServico(id, req.usuarioId, dto);
+
+      if (imagemAntiga && imagemAntiga !== dto.imagem_public_id) {
+        cloudinaryService.deleteFile(imagemAntiga)
+          .catch(err => logger.warn(`Falha ao apagar imagem antiga do serviço ${id}:`, err?.message ?? err));
+      }
 
       res.json({ success: true, data: result });
     } catch (error) {
@@ -186,11 +225,13 @@ export class FashionController {
         return;
       }
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      await assertFazedorOwnsServico(req.usuarioId, id);
       const servico = await this.fashionService.getServicoById(id);
-      if (servico.imagem_public_id) {
-        await cloudinaryService.deleteFile(servico.imagem_public_id);
-      }
       await this.fashionService.deleteServico(id, req.usuarioId);
+      if (servico.imagem_public_id) {
+        cloudinaryService.deleteFile(servico.imagem_public_id)
+          .catch(err => logger.warn(`Falha ao apagar imagem do serviço ${id}:`, err?.message ?? err));
+      }
       res.json({ success: true, message: 'Serviço removido com sucesso' });
     } catch (error) {
       this.handleError(error, res);
@@ -238,12 +279,16 @@ export class FashionController {
       };
 
       const result = await this.fashionService.listFazedores(
-        filters,
-        Number(page),
-        Number(limit)
+        { ...filters, cidade: typeof req.query.cidade === 'string' ? req.query.cidade : undefined },
+        Math.max(Number(page) || 1, 1),
+        Math.min(Math.max(Number(limit) || 20, 1), 100)
       );
 
-      res.json(result);
+      res.json({
+        success: true,
+        ...result,
+        pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+      });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -281,8 +326,6 @@ export class FashionController {
       const usuarioId = Array.isArray(req.usuarioId) ? req.usuarioId[0] : req.usuarioId;
       const { nota, comentario, id_fazedor } = req.body;
 
-      logger.info('Request body:', req.body);
-      
       const result = await this.fashionService.avaliarFazedor(
         usuarioId,
         id_fazedor,
@@ -290,7 +333,19 @@ export class FashionController {
         comentario
       );
 
-      res.status(201).json({ success: true, data: result });
+      res.status(result.atualizada ? 200 : 201).json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async listarFazedoresProximos(req: Request, res: Response): Promise<void> {
+    try {
+      const { lat, lng, raio } = parseGeoQuery(req.query, 25);
+      const tipo_fazedor = typeof req.query.tipo_fazedor === 'string' && req.query.tipo_fazedor ? req.query.tipo_fazedor : undefined;
+      const limit = Number(req.query.limit) || 100;
+      const result = await this.fashionService.listFazedoresProximos({ lat, lng, raio, tipo_fazedor, limit });
+      res.json({ success: true, data: result });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -309,11 +364,15 @@ export class FashionController {
 
       const result = await this.fashionService.getAvaliacoesDoFazedor(
         id,
-        Number(page),
-        Number(limit)
+        Math.max(Number(page) || 1, 1),
+        Math.min(Math.max(Number(limit) || 20, 1), 100)
       );
 
-      res.json(result);
+      res.json({
+        success: true,
+        ...result,
+        pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+      });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -612,17 +671,20 @@ export class FashionController {
         return;
       }
 
-      if (!req.file) {
-        res.status(400).json({ error: 'Nenhuma imagem enviada' });
+      const ficheiros = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const foto = req.file ?? ficheiros?.foto?.[0] ?? ficheiros?.foto_perfil?.[0] ?? ficheiros?.imagem?.[0];
+      if (!foto) {
+        res.status(400).json({ success: false, error: 'Nenhuma imagem enviada (campo foto)' });
         return;
       }
 
-      let data: any = {};
+      let data: any = { ...req.body };
+      delete data.data;
       if (req.body.data) {
         try {
           data = JSON.parse(req.body.data);
         } catch (error) {
-          res.status(400).json({ error: 'Dados do modelo inválidos' });
+          res.status(400).json({ success: false, error: 'Dados do modelo inválidos' });
           return;
         }
       }
@@ -630,7 +692,7 @@ export class FashionController {
       const result = await this.modeloService.criarModeloComFoto(
         req.usuarioId,
         data,
-        req.file.buffer
+        foto.buffer
       );
       res.status(201).json({ success: true, data: result });
     } catch (error) {
@@ -660,10 +722,81 @@ export class FashionController {
     }
   }
 
-  async buscarModeloPorId(req: Request, res: Response): Promise<void> {
+  async listarModelosPublicos(req: Request, res: Response): Promise<void> {
+    try {
+      const page = Math.max(Number(req.query.page) || 1, 1);
+      const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+      const q = (req.query.q ?? req.query.search) as string | undefined;
+      const result = await this.modeloService.listarModelosPublicos({
+        search: q?.trim() || undefined,
+        genero: typeof req.query.genero === 'string' ? req.query.genero : undefined,
+        id_agencia: typeof req.query.id_agencia === 'string' ? req.query.id_agencia : undefined
+      }, page, limit);
+      res.json({
+        success: true,
+        data: result.data,
+        pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async listarMeusModelos(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const page = Math.max(Number(req.query.page) || 1, 1);
+      const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+      const q = (req.query.q ?? req.query.search) as string | undefined;
+      const result = await this.modeloService.listarMeusModelos(req.usuarioId, {
+        status: typeof req.query.status === 'string' && req.query.status ? req.query.status : undefined,
+        genero: typeof req.query.genero === 'string' && req.query.genero ? req.query.genero : undefined,
+        search: q?.trim() || undefined
+      }, page, limit);
+      res.json({
+        success: true,
+        data: result.data,
+        pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async atualizarStatusModelo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const id = String(req.params.id);
+      const result = await this.modeloService.atualizarStatus(id, req.usuarioId, req.body?.status);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async removerFotoModelo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      await this.modeloService.removerFotoPortfolio(String(req.params.id), String(req.params.id_foto), req.usuarioId);
+      res.json({ success: true, message: 'Foto removida com sucesso' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async buscarModeloPorId(req: AuthRequest, res: Response): Promise<void> {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const result = await this.modeloService.buscarModeloPorId(id);
+      const result = await this.modeloService.buscarModeloPorId(id, req.usuarioId);
 
       res.json({ success: true, data: result });
     } catch (error) {
@@ -719,25 +852,26 @@ export class FashionController {
         return;
       }
 
-      if (!req.file) {
-        res.status(400).json({ error: 'Nenhuma imagem enviada' });
+      const ficheiros = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const lista = [...(ficheiros?.fotos ?? []), ...(ficheiros?.imagem ?? [])];
+      if (req.file) lista.push(req.file);
+      if (lista.length === 0) {
+        res.status(400).json({ success: false, error: 'Nenhuma imagem enviada (campo fotos)' });
         return;
       }
-
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { titulo, descricao, categoria } = req.body;
 
-      const result = await this.modeloService.adicionarFotoPortfolio(
+      const fotos = await this.modeloService.adicionarFotosPortfolio(
         id,
         req.usuarioId,
-        req.file.buffer,
-        titulo,
-        descricao,
-        categoria
+        lista.map(f => f.buffer),
+        { titulo, descricao, categoria }
       );
 
-      res.status(201).json({ success: true, data: result });
+      // Compatibilidade: um único ficheiro devolve o objecto; vários devolvem lista
+      res.status(201).json({ success: true, data: fotos.length === 1 ? fotos[0] : fotos, fotos });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -932,6 +1066,35 @@ export class FashionController {
     }
   }
 
+  async denunciarServico(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { motivo, descricao } = req.body;
+
+      const result = await this.servicoDenunciaService.create({
+        id_servico: id,
+        id_usuario: req.usuarioId,
+        motivo,
+        descricao
+      });
+
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   async search(req: Request, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
@@ -973,16 +1136,6 @@ export class FashionController {
 
   private handleError(error: any, res: Response): void {
     logger.error('Erro no FashionController:', error);
-
-    if (error instanceof ValidationError) {
-      res.status(400).json({ success: false, error: error.message });
-    } else if (error instanceof NotFoundError) {
-      res.status(404).json({ success: false, error: error.message });
-    } else {
-      const message = process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Erro interno do servidor';
-      res.status(500).json({ success: false, error: message });
-    }
+    sendDomainError(error, res, 'FASHION_CONTROLLER');
   }
 }

@@ -1,4 +1,5 @@
 import { body, query, param } from 'express-validator';
+import { DENUNCIA_MOTIVOS } from '../services/servico-denuncia.service';
 
 export const createServicoValidation = [
   body('titulo')
@@ -210,4 +211,20 @@ export const listAvaliacoesValidation = [
     .optional()
     .isInt({ min: 1, max: 100 })
     .toInt()
+];
+
+export const denunciarServicoValidation = [
+  param('id')
+    .isUUID()
+    .withMessage('ID do serviço inválido'),
+
+  body('motivo')
+    .isIn(DENUNCIA_MOTIVOS)
+    .withMessage(`Motivo deve ser um de: ${DENUNCIA_MOTIVOS.join(', ')}`),
+
+  body('descricao')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Descrição deve ter no máximo 500 caracteres')
 ];

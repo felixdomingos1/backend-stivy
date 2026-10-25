@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { validationResult } from 'express-validator';
 import { EventService } from '../services/event.service';
@@ -6,9 +6,9 @@ import { EventoRepository } from '../repositories/evento.repository';
 import { FazedorRepository } from '../repositories/fazedor.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { CreateEventoDto, UpdateEventoDto } from '../dtos/event.dto';
-import { processMultipleUploads } from '../middleware/upload.middleware';
+import { processMultipleUploads, processUpload } from '../middleware/upload.middleware';
 import logger from '../utils/logger';
-import { ValidationError, NotFoundError } from '../utils/errors';
+import { sendDomainError, parseGeoQuery } from '../services/authorization.service';
 
 export class EventController {
   private eventService: EventService;
@@ -28,6 +28,7 @@ export class EventController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        logger.warn('[EVENT_CONTROLLER] Validacao falhou:', errors.array());
         res.status(400).json({ errors: errors.array() });
         return;
       }
@@ -37,7 +38,9 @@ export class EventController {
         return;
       }
 
-      const dto: CreateEventoDto = req.body;
+      // Allowlist de campos (nunca confiar em id_organizador/imagens vindos do body)
+      const { titulo, descricao, local, latitude, longitude, data_inicio, data_fim, tipo_evento, valor_ingresso } = req.body;
+      const dto: CreateEventoDto = { titulo, descricao, local, latitude, longitude, data_inicio, data_fim, tipo_evento, valor_ingresso };
 
       // ✅ Upload das imagens do evento (se enviadas)
       let imagens: Array<{
@@ -45,9 +48,12 @@ export class EventController {
         imagem_public_id: string;
         ordem: number;
       }> = [];
-      if (req.files && (req.files as Express.Multer.File[]).length > 0) {
-        const files = req.files as Express.Multer.File[];
-        const uploads = await processMultipleUploads(files, 'eventos');
+      const filesField = req.files as Record<string, Express.Multer.File[]> | Express.Multer.File[] | undefined;
+      const fotos: Express.Multer.File[] = Array.isArray(filesField) ? filesField : (filesField?.fotos ?? []);
+      const bannerFile: Express.Multer.File | undefined = Array.isArray(filesField) ? undefined : filesField?.banner?.[0];
+
+      if (fotos.length > 0) {
+        const uploads = await processMultipleUploads(fotos, 'eventos');
         imagens = uploads
           .filter((u): u is { public_id: string; url: string; thumbnail: string } => u !== null)
           .map((u, index) => ({
@@ -57,17 +63,29 @@ export class EventController {
           }));
       }
 
+      if (bannerFile) {
+        const banner = await processUpload(bannerFile, 'eventos/banners', { width: 1600, quality: 85 });
+        if (banner) {
+          dto.banner_url = banner.url;
+          dto.banner_public_id = banner.public_id;
+          if (imagens.length === 0) {
+            imagens = [{ imagem_url: banner.url, imagem_public_id: banner.public_id, ordem: 0 }];
+          }
+        }
+      }
+
       dto.imagens = imagens;
 
       const result = await this.eventService.createEvento(req.usuarioId, dto);
 
       res.status(201).json({ success: true, data: result });
     } catch (error) {
+      logger.error('[EVENT_CONTROLLER] ERRO em criarEvento:', error);
       this.handleError(error, res);
     }
   }
 
-  async buscarEventoPorId(req: Request, res: Response): Promise<void> {
+  async buscarEventoPorId(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -76,7 +94,7 @@ export class EventController {
       }
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const result = await this.eventService.getEventoById(id);
+      const result = await this.eventService.getEventoById(id, req.usuarioId);
 
       res.json({ success: true, data: result });
     } catch (error) {
@@ -84,7 +102,7 @@ export class EventController {
     }
   }
 
-  async listarEventos(req: Request, res: Response): Promise<void> {
+  async listarEventos(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -110,22 +128,30 @@ export class EventController {
         search: search as string
       };
 
+      const pageNum = Math.max(Number(page) || 1, 1);
+      const limitNum = Math.min(Math.max(Number(limit) || 20, 1), 100);
       const result = await this.eventService.listEventos(
-        filters,
-        Number(page),
-        Number(limit)
+        { ...filters, proximos: req.query.proximos === 'true' || (req.query.proximos as any) === true },
+        pageNum,
+        limitNum,
+        req.usuarioId
       );
 
-      res.json(result);
+      res.json({
+        success: true,
+        data: result.data,
+        pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+      });
     } catch (error) {
       this.handleError(error, res);
     }
   }
 
-  async listarEventosProximos(req: Request, res: Response): Promise<void> {
+  async listarEventosProximos(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const { limit = 10 } = req.query;
-      const result = await this.eventService.listEventosProximos(Number(limit));
+      const { lat, lng, raio } = parseGeoQuery(req.query, 50);
+      const limit = Number(req.query.limit) || 50;
+      const result = await this.eventService.listEventosProximos({ lat, lng, raio, limit }, req.usuarioId);
 
       res.json({ success: true, data: result });
     } catch (error) {
@@ -146,7 +172,8 @@ export class EventController {
         return;
       }
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const dto: UpdateEventoDto = req.body;
+      const { titulo, descricao, local, latitude, longitude, data_inicio, data_fim, tipo_evento, valor_ingresso, status } = req.body;
+      const dto: UpdateEventoDto = { titulo, descricao, local, latitude, longitude, data_inicio, data_fim, tipo_evento, valor_ingresso, status };
       const result = await this.eventService.updateEvento(id, req.usuarioId, dto);
 
       res.json({ success: true, data: result });
@@ -218,7 +245,7 @@ export class EventController {
     }
   }
 
-  async listarParticipantes(req: Request, res: Response): Promise<void> {
+  async listarParticipantes(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -230,11 +257,17 @@ export class EventController {
 
       const result = await this.eventService.listParticipantes(
         id,
-        Number(page),
-        Number(limit)
+        Math.max(Number(page) || 1, 1),
+        Math.min(Math.max(Number(limit) || 20, 1), 100),
+        req.usuarioId
       );
 
-      res.json(result);
+      res.json({
+        success: true,
+        data: result.data,
+        sou_organizador: result.sou_organizador,
+        pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+      });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -284,16 +317,6 @@ export class EventController {
 
   private handleError(error: any, res: Response): void {
     logger.error('Erro no EventController:', error);
-
-    if (error instanceof ValidationError) {
-      res.status(400).json({ success: false, error: error.message });
-    } else if (error instanceof NotFoundError) {
-      res.status(404).json({ success: false, error: error.message });
-    } else {
-      const message = process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Erro interno do servidor';
-      res.status(500).json({ success: false, error: message });
-    }
+    sendDomainError(error, res, 'EVENT_CONTROLLER');
   }
 }

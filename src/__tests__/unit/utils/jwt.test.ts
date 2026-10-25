@@ -7,6 +7,8 @@ import {
   verifyRefreshToken,
   revokeRefreshToken,
   revokeAllUserTokens,
+  gerarToken,
+  rotateRefreshToken,
 } from '../../../utils/jwt';
 import { JwtPayload } from '../../../types';
 
@@ -172,6 +174,85 @@ describe('JWT Utils', () => {
         where: { id_usuario: payload.id, revoked: false },
         data: { revoked: true },
       });
+    });
+  });
+
+  describe('gerarToken (expiração)', () => {
+    const original = process.env.JWT_EXPIRES_IN;
+    afterEach(() => {
+      if (original === undefined) delete process.env.JWT_EXPIRES_IN;
+      else process.env.JWT_EXPIRES_IN = original;
+    });
+
+    it('should default to 1 day when JWT_EXPIRES_IN is not set', () => {
+      delete process.env.JWT_EXPIRES_IN;
+      const decoded: any = jwt.decode(gerarToken(payload));
+      expect(decoded.exp - decoded.iat).toBe(24 * 60 * 60);
+    });
+
+    it('should respect JWT_EXPIRES_IN', () => {
+      process.env.JWT_EXPIRES_IN = '2h';
+      const decoded: any = jwt.decode(gerarToken(payload));
+      expect(decoded.exp - decoded.iat).toBe(2 * 60 * 60);
+    });
+
+    it('should respect an explicit time argument', () => {
+      const decoded: any = jwt.decode(gerarToken(payload, '1h'));
+      expect(decoded.exp - decoded.iat).toBe(60 * 60);
+    });
+
+    it('generateAccessToken should always expire', () => {
+      delete process.env.JWT_EXPIRES_IN;
+      const decoded: any = jwt.decode(generateAccessToken(payload));
+      expect(decoded.exp).toBeDefined();
+    });
+  });
+
+  describe('rotateRefreshToken', () => {
+    const futuro = new Date(Date.now() + 86400000);
+
+    it('should revoke the old token before issuing a new one', async () => {
+      (mockedPrisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        id_usuario: payload.id, revoked: false, expires_at: futuro,
+      });
+      (mockedPrisma.refreshToken.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (mockedPrisma.refreshToken.create as jest.Mock).mockResolvedValue({});
+
+      const result = await rotateRefreshToken('old');
+
+      expect(result.id_usuario).toBe(payload.id);
+      expect(result.refreshToken).toMatch(/^[a-f0-9]{80}$/);
+      expect(mockedPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { token: 'old', revoked: false },
+        data: { revoked: true },
+      });
+      const ordemRevoke = (mockedPrisma.refreshToken.updateMany as jest.Mock).mock.invocationCallOrder[0];
+      const ordemCreate = (mockedPrisma.refreshToken.create as jest.Mock).mock.invocationCallOrder[0];
+      expect(ordemRevoke).toBeLessThan(ordemCreate);
+    });
+
+    it('should revoke all sessions when a revoked token is reused', async () => {
+      (mockedPrisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        id_usuario: payload.id, revoked: true, expires_at: futuro,
+      });
+      (mockedPrisma.refreshToken.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+
+      await expect(rotateRefreshToken('reused')).rejects.toThrow(/reutilizado/);
+      expect(mockedPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { id_usuario: payload.id, revoked: false },
+        data: { revoked: true },
+      });
+      expect(mockedPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject unknown and expired tokens', async () => {
+      (mockedPrisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(rotateRefreshToken('x')).rejects.toThrow('Refresh token inválido ou expirado');
+
+      (mockedPrisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        id_usuario: payload.id, revoked: false, expires_at: new Date(Date.now() - 1000),
+      });
+      await expect(rotateRefreshToken('y')).rejects.toThrow('Refresh token inválido ou expirado');
     });
   });
 });

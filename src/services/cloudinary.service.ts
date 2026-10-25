@@ -49,7 +49,8 @@ export class CloudinaryService {
           height: uploadOptions.height,
           crop: uploadOptions.crop,
           tags: uploadOptions.tags,
-          transformation: uploadOptions.transformation
+          transformation: uploadOptions.transformation,
+          ...(uploadOptions.resource_type && { resource_type: uploadOptions.resource_type })
         },
         cleanup((error, result) => {
           if (error) reject(error);
@@ -98,9 +99,9 @@ export class CloudinaryService {
     return await Promise.all(promises);
   }
 
-  async deleteFile(publicId: string): Promise<void> {
+  async deleteFile(publicId: string, resourceType: 'image' | 'video' | 'raw' = 'image'): Promise<void> {
     return new Promise((resolve, reject) => {
-      cloudinary.uploader.destroy(publicId, (error, result) => {
+      cloudinary.uploader.destroy(publicId, { resource_type: resourceType }, (error, result) => {
         if (error) reject(error);
         else resolve(result);
       });

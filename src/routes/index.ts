@@ -23,17 +23,4 @@ router.use('/stories', storyRoutes);
 router.use('/chat', chatRoutes);
 router.use('/devices', deviceRoutes);
 
-router.get('/health', (_, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV,
-    services: {
-      database: 'connected',
-      redis: process.env.REDIS_HOST ? 'connected' : 'disabled'
-    }
-  });
-});
-
 export default router;

@@ -9,11 +9,14 @@ export const validate = (
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
+    const lista = errors.array().map((err: any) => ({
+      field: err.path ?? err.param,
+      message: err.msg
+    }));
     res.status(400).json({
       success: false,
-      errors: errors.array().map(err => ({
-        message: err.msg
-      }))
+      error: lista[0]?.message || 'Erro de validação',
+      errors: lista
     });
     return;
   }

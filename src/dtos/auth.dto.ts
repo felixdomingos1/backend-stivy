@@ -42,7 +42,8 @@ export interface AuthResponseDto {
   token?: string;
   refreshToken?: string;
   requiresVerification?: boolean;
-  resetToken?: string;
+  /** Email verificado? (login é permitido sem verificação; o app deve pedir o código) */
+  isVerified?: boolean;
   usuario: {
     id: string;
     nome: string;
@@ -54,17 +55,4 @@ export interface AuthResponseDto {
     status_aprovacao?: string;
     tipo_fazedor?: string;
   };
-}
-export interface LoginDto {
-  email: string;
-  senha: string;
-}
-
-export interface PasswordResetRequestDto {
-  email: string;
-}
-
-export interface PasswordResetDto {
-  token: string;
-  nova_senha: string;
 }

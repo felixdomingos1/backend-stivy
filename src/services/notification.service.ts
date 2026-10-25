@@ -1,5 +1,6 @@
 import { NotificacaoRepository, CreateNotificacaoData, NotificacaoFilters } from '../repositories/notificacao.repository';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { ForbiddenError } from './authorization.service';
 import logger from '../utils/logger';
 import { NotificacaoTipo } from '@prisma/client';
 
@@ -76,7 +77,7 @@ export class NotificationService {
       }
 
       if (notificacao.id_usuario !== id_usuario) {
-        throw new ValidationError('Acesso negado: esta notificação não pertence ao usuário');
+        throw new ForbiddenError('Acesso negado: esta notificação não pertence ao usuário');
       }
 
       return notificacao;
@@ -94,11 +95,11 @@ export class NotificationService {
       }
 
       if (notificacao.id_usuario !== id_usuario) {
-        throw new ValidationError('Acesso negado: esta notificação não pertence ao usuário');
+        throw new ForbiddenError('Acesso negado: esta notificação não pertence ao usuário');
       }
 
       if (notificacao.lida) {
-        throw new ValidationError('Notificação já está marcada como lida');
+        return notificacao;
       }
 
       const notificacaoAtualizada = await this.notificacaoRepository.markAsRead(id);
@@ -136,7 +137,7 @@ export class NotificationService {
       }
 
       if (notificacao.id_usuario !== id_usuario) {
-        throw new ValidationError('Acesso negado: esta notificação não pertence ao usuário');
+        throw new ForbiddenError('Acesso negado: esta notificação não pertence ao usuário');
       }
 
       await this.notificacaoRepository.delete(id);
@@ -147,6 +148,16 @@ export class NotificationService {
     } catch (error: any) {
       throw error;
     }
+  }
+
+  async contarNaoLidas(id_usuario: string): Promise<number> {
+    return await this.notificacaoRepository.countByUsuario(id_usuario, false);
+  }
+
+  async removerTodas(id_usuario: string): Promise<{ count: number }> {
+    const count = await this.notificacaoRepository.deleteAllByUsuario(id_usuario);
+    logger.info(`${count} notificações removidas para usuário: ${id_usuario}`);
+    return { count };
   }
 
   async listarNaoLidas(id_usuario: string): Promise<any[]> {
@@ -210,7 +221,7 @@ export class NotificationService {
         titulo,
         mensagem,
         tipo: 'evento' as NotificacaoTipo,
-        link: `/eventos/${id_evento}`
+        link: `/evento/${id_evento}`
       }));
 
       await this.criarMultiplasNotificacoes(notificacoes);
@@ -254,7 +265,7 @@ export class NotificationService {
         titulo,
         mensagem,
         tipo: 'requisicao' as NotificacaoTipo,
-        link: `/requisicoes/${id_requisicao}`
+        link: `/requisicao/${id_requisicao}`
       });
 
       logger.info(`Notificação de requisição enviada: ${id_requisicao} - ${status}`);

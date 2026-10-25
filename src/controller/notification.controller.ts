@@ -3,7 +3,7 @@ import { validationResult } from 'express-validator';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { NotificationService } from '../services/notification.service';
-import { NotFoundError, ValidationError } from '../utils/errors';
+import { sendDomainError } from '../services/authorization.service';
 import logger from '../utils/logger';
 
 export class NotificationController {
@@ -27,7 +27,9 @@ export class NotificationController {
         return;
       }
 
-      const { tipo, lida, data_inicio, data_fim, page = 1, limit = 20 } = req.query;
+      const { tipo, lida, data_inicio, data_fim } = req.query;
+      const page = Math.max(parseInt(String(req.query.page ?? '1'), 10) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
 
       const filters = {
         tipo: tipo as string,
@@ -61,14 +63,43 @@ export class NotificationController {
         return;
       }
 
-      const notificacoes = await this.notificationService.listarNaoLidas(req.usuarioId);
+      const [notificacoes, count] = await Promise.all([
+        this.notificationService.listarNaoLidas(req.usuarioId),
+        this.notificationService.contarNaoLidas(req.usuarioId)
+      ]);
 
       res.status(200).json({
         success: true,
         data: notificacoes,
-        count: notificacoes.length,
+        count,
         timestamp: new Date().toISOString()
       });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async contarNaoLidas(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const count = await this.notificationService.contarNaoLidas(req.usuarioId);
+      res.status(200).json({ success: true, data: { count } });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async removerTodas(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const result = await this.notificationService.removerTodas(req.usuarioId);
+      res.status(200).json({ success: true, data: result });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -234,16 +265,6 @@ export class NotificationController {
 
   private handleError(error: any, res: Response): void {
     logger.error('Erro no NotificationController:', error);
-
-    if (error instanceof ValidationError) {
-      res.status(400).json({ success: false, error: error.message });
-    } else if (error instanceof NotFoundError) {
-      res.status(404).json({ success: false, error: error.message });
-    } else {
-      const message = process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Erro interno do servidor';
-      res.status(500).json({ success: false, error: message });
-    }
+    sendDomainError(error, res, 'NOTIFICATION_CONTROLLER');
   }
 }

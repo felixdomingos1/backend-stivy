@@ -12,8 +12,8 @@ import {
 } from '../dtos/auth.dto';
 import { AuthRequest } from '../middleware/auth.middleware';
 import logger from '../utils/logger';
-import { AuthenticationError, ValidationError } from '../utils/errors';
-import { verifyRefreshToken, generateAccessToken, generateRefreshToken, revokeRefreshToken, revokeAllUserTokens } from '../utils/jwt';
+import { getErrorStatus } from '../utils/errors';
+import { generateAccessToken, rotateRefreshToken, revokeAllUserTokens, RefreshTokenInvalidoError } from '../utils/jwt';
 
 export class AuthController {
   private authService: AuthService;
@@ -29,7 +29,7 @@ export class AuthController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
@@ -47,7 +47,7 @@ export class AuthController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
       const { userId, codigo } = req.body as VerifyEmailDto;
@@ -63,7 +63,7 @@ export class AuthController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
@@ -80,7 +80,7 @@ export class AuthController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
@@ -97,12 +97,13 @@ export class AuthController {
   async me(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
-        res.status(401).json({ error: 'Não autorizado' });
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
       const profile = await this.authService.getUserProfile(req.usuarioId);
-      res.json(profile);
+      // Mantém `usuario`/`fazedor` no topo (compatibilidade) e também em `data` (envelope padrão)
+      res.json({ success: true, ...profile, data: profile });
     } catch (error) {
       this.handleError(error, res);
     }
@@ -113,7 +114,7 @@ export class AuthController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
@@ -133,7 +134,7 @@ export class AuthController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
@@ -150,7 +151,7 @@ export class AuthController {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ errors: errors.array() });
+        res.status(400).json({ success: false, error: errors.array()[0]?.msg || 'Erro de validação', errors: errors.array() });
         return;
       }
 
@@ -166,20 +167,26 @@ export class AuthController {
     }
   }
 
+  /**
+   * POST /auth/refresh-token { refreshToken } -> { success, token, refreshToken, data: { token, refreshToken } }
+   * Rotação: o refresh token apresentado é revogado ANTES de emitir o novo; reutilização de um token
+   * revogado revoga todas as sessões do utilizador.
+   */
   async refreshToken(req: Request, res: Response): Promise<void> {
     try {
-      const { refreshToken } = req.body;
+      const { refreshToken } = req.body ?? {};
 
-      if (!refreshToken) {
+      if (!refreshToken || typeof refreshToken !== 'string') {
         res.status(400).json({ success: false, error: 'Refresh token é obrigatório' });
         return;
       }
 
-      const payload = await verifyRefreshToken(refreshToken);
-      const user = await new UserRepository().findByIdComplete(payload.id_usuario);
+      const { id_usuario, refreshToken: newRefreshToken } = await rotateRefreshToken(refreshToken);
+      const user = await new UserRepository().findById(id_usuario);
 
       if (!user || user.status !== 'ativo') {
-        res.status(401).json({ success: false, error: 'Usuário inválido ou inativo' });
+        await revokeAllUserTokens(id_usuario);
+        res.status(401).json({ success: false, error: 'Não autorizado' });
         return;
       }
 
@@ -190,15 +197,17 @@ export class AuthController {
         isVerified: user.email_verificado,
       });
 
-      const newRefreshToken = await generateRefreshToken(user.id_usuario);
-      await revokeRefreshToken(refreshToken);
-
       res.json({
         success: true,
         token: newAccessToken,
         refreshToken: newRefreshToken,
+        data: { token: newAccessToken, refreshToken: newRefreshToken },
       });
     } catch (error) {
+      if (error instanceof RefreshTokenInvalidoError) {
+        res.status(401).json({ success: false, error: error.message });
+        return;
+      }
       this.handleError(error, res);
     }
   }
@@ -220,24 +229,20 @@ export class AuthController {
 
 
   private handleError(error: any, res: Response): void {
+    const status = getErrorStatus(error);
+    if (status) {
+      res.status(status).json({ success: false, error: error.message });
+      return;
+    }
+
     logger.error('Erro na requisição:', error);
 
-    if (error instanceof ValidationError) {
-      res.status(400).json({
-        success: false,
-        error: error.message
-      });
-    } else if (error instanceof AuthenticationError) {
-      res.status(401).json({
-        success: false,
-        error: error.message
-      });
-    } else if (error.code === 'P2002') {
-      res.status(400).json({
+    if (error?.code === 'P2002') {
+      res.status(409).json({
         success: false,
         error: 'Este email já está cadastrado'
       });
-    } else if (error.code === 'P2025') {
+    } else if (error?.code === 'P2025') {
       res.status(404).json({
         success: false,
         error: 'Registro não encontrado'

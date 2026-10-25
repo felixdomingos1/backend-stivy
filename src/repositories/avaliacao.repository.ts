@@ -42,7 +42,6 @@ export class AvaliacaoRepository {
           select: {
             id_usuario: true,
             nome: true,
-            email: true,
             foto_perfil: true
           }
         },
@@ -51,7 +50,6 @@ export class AvaliacaoRepository {
             usuario: {
               select: {
                 nome: true,
-                email: true,
                 foto_perfil: true
               }
             }
@@ -65,6 +63,33 @@ export class AvaliacaoRepository {
     return avaliacao;
   }
 
+  /** Uma avaliação por utilizador por fazedor: cria ou actualiza a existente. */
+  async upsert(data: CreateAvaliacaoData): Promise<{ avaliacao: Avaliacao; criada: boolean }> {
+    const existente = await this.prisma.avaliacao.findUnique({
+      where: { id_avaliador_id_avaliado: { id_avaliador: data.id_avaliador, id_avaliado: data.id_avaliado } },
+      select: { id_avaliacao: true }
+    });
+    const avaliacao = await this.prisma.avaliacao.upsert({
+      where: { id_avaliador_id_avaliado: { id_avaliador: data.id_avaliador, id_avaliado: data.id_avaliado } },
+      create: {
+        id_avaliador: data.id_avaliador,
+        id_avaliado: data.id_avaliado,
+        nota: data.nota,
+        comentario: data.comentario
+      },
+      update: {
+        nota: data.nota,
+        comentario: data.comentario,
+        data_avaliacao: new Date()
+      },
+      include: {
+        avaliador: { select: { id_usuario: true, nome: true, foto_perfil: true } }
+      }
+    });
+    await this.updateFazedorMedia(data.id_avaliado);
+    return { avaliacao, criada: !existente };
+  }
+
   async findById(id: string): Promise<Avaliacao | null> {
     return await this.prisma.avaliacao.findUnique({
       where: { id_avaliacao: id },
@@ -73,7 +98,6 @@ export class AvaliacaoRepository {
           select: {
             id_usuario: true,
             nome: true,
-            email: true,
             foto_perfil: true
           }
         },
@@ -82,7 +106,6 @@ export class AvaliacaoRepository {
             usuario: {
               select: {
                 nome: true,
-                email: true,
                 foto_perfil: true
               }
             }
@@ -125,7 +148,6 @@ export class AvaliacaoRepository {
           select: {
             id_usuario: true,
             nome: true,
-            email: true,
             foto_perfil: true
           }
         }
@@ -143,7 +165,6 @@ export class AvaliacaoRepository {
             usuario: {
               select: {
                 nome: true,
-                email: true,
                 foto_perfil: true
               }
             }
@@ -293,7 +314,6 @@ export class AvaliacaoRepository {
         usuario: {
           select: {
             nome: true,
-            email: true,
             foto_perfil: true
           }
         }

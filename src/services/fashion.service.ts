@@ -4,6 +4,29 @@ import { AvaliacaoRepository } from '../repositories/avaliacao.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { CreateServicoDto, UpdateServicoDto } from '../dtos/fashion.dto';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { ForbiddenError, toNumber, haversineKm, boundingBox } from './authorization.service';
+
+/** Converte decimais do fazedor em number e acrescenta o objecto `contatos` (contrato). */
+export const formatFazedorPublico = (f: any) => {
+  if (!f) return f;
+  return {
+    ...f,
+    latitude: toNumber(f.latitude),
+    longitude: toNumber(f.longitude),
+    avaliacao_media: toNumber(f.avaliacao_media) ?? 0,
+    total_avaliacoes: f.total_avaliacoes ?? 0,
+    contatos: {
+      whatsapp: f.whatsapp ?? null,
+      telefone: f.telefone_publico ?? null,
+      email: f.email_publico ?? null,
+      instagram: f.instagram ?? null,
+      facebook: f.facebook ?? null,
+      website: f.website ?? null
+    }
+  };
+};
+
+const formatServico = (s: any) => s ? { ...s, valor: toNumber(s.valor) } : s;
 import logger from '../utils/logger';
 import prisma from '../config/database';
 
@@ -16,6 +39,14 @@ export class FashionService {
     private avaliacaoRepository: AvaliacaoRepository
   ) {
     this.notificacaoRepository = new NotificacaoRepository();
+  }
+
+  /** Aceita id_fazedor OU id_usuario (compatibilidade com o app). */
+  private async resolverFazedorId(id: string): Promise<{ id_fazedor: string; id_usuario: string } | null> {
+    return await prisma.fazedor.findFirst({
+      where: { OR: [{ id_fazedor: id }, { id_usuario: id }] },
+      select: { id_fazedor: true, id_usuario: true }
+    });
   }
 
   async createServico(fazedorId: string, dto: CreateServicoDto): Promise<any> {
@@ -57,7 +88,7 @@ export class FashionService {
     if (!servico) {
       throw new NotFoundError('Serviço não encontrado');
     }
-    return servico;
+    return formatServico(servico);
   }
 
   async listServicos(filters: ServicoFilters, page: number = 1, limit: number = 20): Promise<any> {
@@ -68,7 +99,7 @@ export class FashionService {
     ]);
 
     return {
-      data: servicos,
+      data: servicos.map(formatServico),
       total,
       page,
       limit,
@@ -84,12 +115,22 @@ export class FashionService {
 
     const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorUserId);
     if (!fazedor || servico.id_fazedor !== fazedor.id_fazedor) {
-      throw new ValidationError('Você não tem permissão para editar este serviço');
+      throw new ForbiddenError('Você não tem permissão para editar este serviço');
     }
 
-    const updated = await this.servicoRepository.update(id, dto);
+    // Allowlist explícita
+    const updated = await this.servicoRepository.update(id, {
+      titulo: dto.titulo,
+      descricao: dto.descricao,
+      categoria: dto.categoria,
+      valor: dto.valor === undefined ? undefined : (toNumber(dto.valor) ?? undefined),
+      tempo_estimado: dto.tempo_estimado,
+      status: dto.status,
+      imagem_url: dto.imagem_url,
+      imagem_public_id: dto.imagem_public_id
+    });
     logger.info(`Serviço atualizado: ${id}`);
-    return updated;
+    return formatServico(updated);
   }
 
   async deleteServico(id: string, fazedorUserId: string): Promise<void> {
@@ -100,27 +141,65 @@ export class FashionService {
 
     const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorUserId);
     if (!fazedor || servico.id_fazedor !== fazedor.id_fazedor) {
-      throw new ValidationError('Você não tem permissão para excluir este serviço');
+      throw new ForbiddenError('Você não tem permissão para excluir este serviço');
     }
 
     await this.servicoRepository.delete(id);
     logger.info(`Serviço excluído: ${id}`);
   }
 
-  async getFazedorById(fazedorUserId: string): Promise<any> {
-    const fazedor = await this.fazedorRepository.findFazedorWithDetails(fazedorUserId)
-      ?? await this.fazedorRepository.findFazedorByIdWithDetails(fazedorUserId);
+  async getFazedorById(id: string): Promise<any> {
+    const fazedor = await this.fazedorRepository.findFazedorWithDetails(id)
+      ?? await this.fazedorRepository.findFazedorByIdWithDetails(id);
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
     }
-    const estatisticas = await this.avaliacaoRepository.getEstatisticas(fazedor.id_fazedor);
-    const servicos = await this.servicoRepository.findByFazedor(fazedor.id_fazedor);
+    const [estatisticas, servicos] = await Promise.all([
+      this.avaliacaoRepository.getEstatisticas(fazedor.id_fazedor),
+      this.servicoRepository.findByFazedor(fazedor.id_fazedor)
+    ]);
 
     return {
-      ...fazedor,
+      ...formatFazedorPublico(fazedor),
       estatisticas,
-      servicos
+      servicos: servicos.map(formatServico)
     };
+  }
+
+  /** Fazedores perto de (lat,lng) dentro de raio_km, ordenados por distância. Sem lat/lng: todos com coordenadas. */
+  async listFazedoresProximos(params: { lat: number | null; lng: number | null; raio: number; tipo_fazedor?: string; limit: number }): Promise<any[]> {
+    const limit = Math.min(Math.max(params.limit || 100, 1), 300);
+    const box = params.lat !== null && params.lng !== null ? boundingBox(params.lat, params.lng, params.raio) : undefined;
+    const rows = await this.fazedorRepository.findComCoordenadas(box, params.tipo_fazedor, box ? 2000 : limit);
+
+    const items = rows.map(f => {
+      const latitude = toNumber(f.latitude)!;
+      const longitude = toNumber(f.longitude)!;
+      const base: any = {
+        id_fazedor: f.id_fazedor,
+        id_usuario: f.id_usuario,
+        nome: f.usuario.nome,
+        foto_perfil: f.usuario.foto_perfil,
+        tipo_fazedor: f.tipo_fazedor,
+        cidade: f.cidade,
+        provincia: f.provincia,
+        endereco: f.endereco,
+        latitude,
+        longitude,
+        avaliacao_media: toNumber(f.avaliacao_media) ?? 0,
+        total_avaliacoes: f.total_avaliacoes ?? 0
+      };
+      if (box) {
+        base.distancia_km = Math.round(haversineKm(params.lat!, params.lng!, latitude, longitude) * 100) / 100;
+      }
+      return base;
+    });
+
+    if (!box) return items.slice(0, limit);
+    return items
+      .filter(i => i.distancia_km <= params.raio)
+      .sort((a, b) => a.distancia_km - b.distancia_km)
+      .slice(0, limit);
   }
 
   async listFazedores(filters: FazedorFilters, page: number = 1, limit: number = 20): Promise<any> {
@@ -131,7 +210,7 @@ export class FashionService {
     ]);
 
     return {
-      data: fazedores,
+      data: fazedores.map(formatFazedorPublico),
       total,
       page,
       limit,
@@ -139,56 +218,61 @@ export class FashionService {
     };
   }
 
-  async getServicosDoFazedor(fazedorUserId: string): Promise<any[]> {
-    const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorUserId);
+  async getServicosDoFazedor(id: string): Promise<any[]> {
+    const fazedor = await this.resolverFazedorId(id);
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
     }
-    return await this.servicoRepository.findByFazedor(fazedor.id_fazedor);
+    const servicos = await this.servicoRepository.findByFazedor(fazedor.id_fazedor);
+    return servicos.map(formatServico);
   }
 
-  async avaliarFazedor(avaliadorUserId: string, fazedorUserId: string, nota: number, comentario?: string): Promise<any> {
-    if (nota < 1 || nota > 5) {
-      throw new ValidationError('Nota deve ser entre 1 e 5');
+  /** `idFazedorOuUsuario` aceita id_fazedor ou id_usuario do fazedor. Uma avaliação por utilizador (actualiza se já existir). */
+  async avaliarFazedor(avaliadorUserId: string, idFazedorOuUsuario: string, nota: number, comentario?: string): Promise<any> {
+    const notaNum = Number(nota);
+    if (!Number.isInteger(notaNum) || notaNum < 1 || notaNum > 5) {
+      throw new ValidationError('Nota deve ser um inteiro entre 1 e 5');
     }
 
-    const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorUserId);
+    if (!idFazedorOuUsuario) {
+      throw new ValidationError('id_fazedor é obrigatório');
+    }
+
+    const fazedor = await this.resolverFazedorId(idFazedorOuUsuario);
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
     }
 
-    const jaAvaliou = await this.avaliacaoRepository.jaAvaliou(avaliadorUserId, fazedor.id_fazedor);
-    if (jaAvaliou) {
-      throw new ValidationError('Você já avaliou este fazedor');
+    if (fazedor.id_usuario === avaliadorUserId) {
+      throw new ForbiddenError('Não pode avaliar o seu próprio perfil');
     }
 
-    const avaliacao = await this.avaliacaoRepository.create({
+    const { avaliacao, criada } = await this.avaliacaoRepository.upsert({
       id_avaliador: avaliadorUserId,
       id_avaliado: fazedor.id_fazedor,
-      nota,
+      nota: notaNum,
       comentario
     });
 
-    if (fazedorUserId !== avaliadorUserId) {
-      const avaliador = await prisma.usuario.findUnique({
-        where: { id_usuario: avaliadorUserId },
-        select: { nome: true },
-      });
-      await this.notificacaoRepository.create({
-        id_usuario: fazedorUserId,
-        titulo: 'Nova avaliação',
-        mensagem: `${avaliador?.nome ?? 'Alguém'} avaliou o seu perfil com ${nota} estrela${nota > 1 ? 's' : ''}`,
-        tipo: 'sistema',
-        link: `/fazedor/${fazedor.id_fazedor}`,
-      });
-    }
+    const avaliador = await prisma.usuario.findUnique({
+      where: { id_usuario: avaliadorUserId },
+      select: { nome: true },
+    });
+    await this.notificacaoRepository.createSafe({
+      id_usuario: fazedor.id_usuario,
+      titulo: criada ? 'Nova avaliação' : 'Avaliação atualizada',
+      mensagem: `${avaliador?.nome ?? 'Alguém'} avaliou o seu perfil com ${notaNum} estrela${notaNum > 1 ? 's' : ''}`,
+      tipo: 'avaliacao',
+      link: `/fazedor/${fazedor.id_fazedor}`,
+      id_ator: avaliadorUserId
+    });
 
-    logger.info(`Avaliação criada: ${avaliadorUserId} -> ${fazedor.id_fazedor} (${nota})`);
-    return avaliacao;
+    logger.info(`Avaliação ${criada ? 'criada' : 'atualizada'}: ${avaliadorUserId} -> ${fazedor.id_fazedor} (${notaNum})`);
+    return { ...avaliacao, atualizada: !criada };
   }
 
-  async getAvaliacoesDoFazedor(fazedorUserId: string, page: number = 1, limit: number = 20): Promise<any> {
-    const fazedor = await this.fazedorRepository.findFazedorByUserId(fazedorUserId);
+  async getAvaliacoesDoFazedor(id: string, page: number = 1, limit: number = 20): Promise<any> {
+    const fazedor = await this.resolverFazedorId(id);
     if (!fazedor) {
       throw new NotFoundError('Fazedor não encontrado');
     }
@@ -225,7 +309,7 @@ export class FashionService {
       perfil: {
         tipo: fazedor.tipo_fazedor,
         status_aprovacao: fazedor.status_aprovacao,
-        data_cadastro: fazedor.usuario?.data_cadastro
+        data_cadastro: (fazedor.usuario as any)?.data_cadastro
       }
     };
   }
@@ -322,7 +406,6 @@ export class FashionService {
               select: {
                 id_usuario: true,
                 nome: true,
-                email: true,
                 foto_perfil: true,
               },
             },

@@ -4,9 +4,74 @@ import { FazedorRepository } from '../repositories/fazedor.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { UpdateUserDto, UpdatePasswordDto } from '../dtos/user.dto';
 import { compararSenha, hashSenha } from '../utils/bcrypt';
+import { revokeAllUserTokens } from '../utils/jwt';
 import { ValidationError, AuthenticationError, NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
 import prisma from '../config/database'; // ✅ Importar diretamente
+
+const toNumberOrNull = (v: any): number | null =>
+  v === null || v === undefined ? null : Number(v);
+
+/** Campos do Fazedor editáveis pelo próprio via PUT /users/perfil (allowlist). */
+const CAMPOS_FAZEDOR_TEXTO = [
+  'biografia', 'endereco', 'cidade', 'provincia', 'whatsapp', 'telefone_publico',
+  'email_publico', 'instagram', 'facebook', 'website'
+] as const;
+
+const LIMITES_TEXTO: Record<string, number> = {
+  biografia: 5000, endereco: 255, cidade: 100, provincia: 100, whatsapp: 20,
+  telefone_publico: 20, email_publico: 100, instagram: 100, facebook: 100, website: 100
+};
+
+export interface UpdatePerfilInput extends UpdateUserDto {
+  biografia?: string | null;
+  endereco?: string | null;
+  cidade?: string | null;
+  provincia?: string | null;
+  whatsapp?: string | null;
+  telefone_publico?: string | null;
+  email_publico?: string | null;
+  instagram?: string | null;
+  facebook?: string | null;
+  website?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+}
+
+/**
+ * Formata o Fazedor do PRÓPRIO utilizador (sem `usuario` aninhado, que pode trazer campos sensíveis).
+ * Decimais (latitude, longitude, avaliacao_media) devolvidos como number.
+ */
+export const formatarFazedorPrivado = (fazedor: any): any => {
+  if (!fazedor) return null;
+  return {
+    id: fazedor.id_fazedor,
+    id_fazedor: fazedor.id_fazedor,
+    tipo_fazedor: fazedor.tipo_fazedor,
+    status_aprovacao: fazedor.status_aprovacao,
+    data_aprovacao: fazedor.data_aprovacao ?? null,
+    avaliacao_media: toNumberOrNull(fazedor.avaliacao_media),
+    total_avaliacoes: fazedor.total_avaliacoes ?? 0,
+    biografia: fazedor.biografia ?? null,
+    endereco: fazedor.endereco ?? null,
+    cidade: fazedor.cidade ?? null,
+    provincia: fazedor.provincia ?? null,
+    whatsapp: fazedor.whatsapp ?? null,
+    telefone_publico: fazedor.telefone_publico ?? null,
+    email_publico: fazedor.email_publico ?? null,
+    instagram: fazedor.instagram ?? null,
+    facebook: fazedor.facebook ?? null,
+    website: fazedor.website ?? null,
+    latitude: toNumberOrNull(fazedor.latitude),
+    longitude: toNumberOrNull(fazedor.longitude),
+    capa_url: fazedor.capa_url ?? null,
+    ...(fazedor.agencia && { agencia: fazedor.agencia }),
+    ...(fazedor.modeloFreelancer && { modelo: fazedor.modeloFreelancer }),
+    ...(fazedor.estilista && { estilista: fazedor.estilista }),
+    ...(fazedor.maquiador && { maquiador: fazedor.maquiador }),
+    ...(fazedor.fotografo && { fotografo: fazedor.fotografo })
+  };
+};
 
 export class UserService {
   private notificacaoRepository: NotificacaoRepository;
@@ -18,26 +83,18 @@ export class UserService {
     this.notificacaoRepository = new NotificacaoRepository();
   }
 
-  async pegarTodos(): Promise<any[]> {
-    const users = await this.userRepository.findAll();
-    return users.map(user => ({
-      id: user.id_usuario,
-      nome: user.nome,
-      email: user.email,
-      perfil: {
-        telefone: user.telefone,
-        foto: user.foto_perfil,
-        status: user.status,
-        tipo: user.tipo,
-      },
-      fazedor: user.fazedor,
-      favoritos: user.favoritos,
-      notificacoes: user.notificacoes,
-      requisicoes: user.requisicoes,
-      eventos: user.eventosParticipados,
-      stories: user.stories,
-      estatisticas: user._count,
-    }));
+  /** Apenas admin (ver user.routes). Paginado, campos privados (sem dados sensíveis). */
+  async pegarTodos(page: number = 1, limit: number = 20): Promise<{ items: any[]; total: number; page: number; limit: number; totalPages: number }> {
+    const pagina = Math.max(1, Math.floor(Number(page)) || 1);
+    const limite = Math.min(100, Math.max(1, Math.floor(Number(limit)) || 20));
+    const { items, total } = await this.userRepository.findAllPaginated(pagina, limite);
+    return {
+      items,
+      total,
+      page: pagina,
+      limit: limite,
+      totalPages: Math.ceil(total / limite)
+    };
   }
 
   async getProfile(userId: string): Promise<any> {
@@ -51,32 +108,10 @@ export class UserService {
     return {
       usuario: {
         id: user.id_usuario,
-        nome: user.nome,
-        email: user.email,
-        telefone: user.telefone,
-        tipo: user.tipo,
-        foto_perfil: user.foto_perfil,
-        bio: (user as any).bio,
-        data_cadastro: user.data_cadastro,
-        email_verificado: (user as any).email_verificado,
-        status: user.status
+        ...user,
+        bio: fazedor?.biografia ?? null
       },
-      fazedor: fazedor ? {
-        id: fazedor.id_fazedor,
-        tipo_fazedor: fazedor.tipo_fazedor,
-        status_aprovacao: fazedor.status_aprovacao,
-        avaliacao_media: fazedor.avaliacao_media,
-        total_avaliacoes: fazedor.total_avaliacoes,
-        biografia: fazedor.biografia,
-        instagram: fazedor.instagram,
-        facebook: fazedor.facebook,
-        website: fazedor.website,
-        ...(fazedor.agencia && { agencia: fazedor.agencia }),
-        ...(fazedor.modeloFreelancer && { modelo: fazedor.modeloFreelancer }),
-        ...(fazedor.estilista && { estilista: fazedor.estilista }),
-        ...(fazedor.maquiador && { maquiador: fazedor.maquiador }),
-        ...(fazedor.fotografo && { fotografo: fazedor.fotografo })
-      } : null
+      fazedor: formatarFazedorPrivado(fazedor)
     };
   }
 
@@ -114,22 +149,40 @@ export class UserService {
     }
   }
 
-  async updateProfile(userId: string, dto: UpdateUserDto): Promise<any> {
+  /**
+   * PUT /users/perfil — allowlist de campos.
+   * Usuario: nome, telefone. Fazedor: biografia (ou `bio`), endereco, cidade, provincia, whatsapp,
+   * telefone_publico, email_publico, instagram, facebook, website, latitude, longitude.
+   * Modelo freelancer: campos de medidas (como antes). Tudo o resto é ignorado.
+   */
+  async updateProfile(userId: string, dto: UpdatePerfilInput): Promise<any> {
     const user = await this.userRepository.findById(userId);
     if (!user) {
       throw new NotFoundError('Usuário não encontrado');
     }
 
-    const updatedUser = await this.userRepository.updateUser(userId, {
-      nome: dto.nome,
-      telefone: dto.telefone,
-      foto_perfil: dto.foto_perfil,
-      foto_perfil_public_id: dto.foto_perfil_public_id ? dto.foto_perfil_public_id : "",
-      bio: dto.bio
-    });
+    const dadosUsuario: { nome?: string; telefone?: string | null } = {};
+    if (typeof dto.nome === 'string' && dto.nome.trim()) dadosUsuario.nome = dto.nome.trim().slice(0, 100);
+    if (dto.telefone !== undefined) {
+      dadosUsuario.telefone = dto.telefone ? String(dto.telefone).trim().slice(0, 20) : null;
+    }
 
-    // ✅ Atualizar dados de modelo freelancer se o usuário for um
+    const updatedUser = Object.keys(dadosUsuario).length > 0
+      ? await this.userRepository.updateUser(userId, dadosUsuario)
+      : user;
+
     const fazedor = await this.fazedorRepository.findFazedorByUserId(userId);
+
+    if (fazedor) {
+      const dadosFazedor = this.extrairDadosFazedor(dto);
+      if (Object.keys(dadosFazedor).length > 0) {
+        await prisma.fazedor.update({
+          where: { id_fazedor: fazedor.id_fazedor },
+          data: dadosFazedor
+        });
+      }
+    }
+
     if (fazedor && fazedor.tipo_fazedor === 'modelo_freelancer' && fazedor.modeloFreelancer) {
       const modeloData: any = {};
       if (dto.nome_artistico !== undefined) modeloData.nome_artistico = dto.nome_artistico;
@@ -156,24 +209,82 @@ export class UserService {
       }
     }
 
-    logger.info(`Perfil atualizado para usuário: ${user.email}`);
+    logger.info(`Perfil atualizado para usuário: ${userId}`);
+
+    const fazedorAtualizado = fazedor
+      ? await this.fazedorRepository.findFazedorByUserId(userId)
+      : null;
 
     return {
       id: updatedUser.id_usuario,
+      id_usuario: updatedUser.id_usuario,
       nome: updatedUser.nome,
       email: updatedUser.email,
       telefone: updatedUser.telefone,
       tipo: updatedUser.tipo,
       foto_perfil: updatedUser.foto_perfil,
-      bio: (updatedUser as any).bio,
-      data_cadastro: updatedUser.data_cadastro
+      banner_url: updatedUser.banner_url,
+      bio: fazedorAtualizado?.biografia ?? null,
+      data_cadastro: updatedUser.data_cadastro,
+      fazedor: formatarFazedorPrivado(fazedorAtualizado)
     };
   }
 
+  /** Extrai e valida os campos do Fazedor permitidos. Lança ValidationError se lat/lng inválidos. */
+  private extrairDadosFazedor(dto: UpdatePerfilInput): Record<string, any> {
+    const dados: Record<string, any> = {};
+    const entrada: Record<string, any> = { ...dto };
+
+    // Compatibilidade: o app antigo envia `bio`
+    if (entrada.biografia === undefined && entrada.bio !== undefined) {
+      entrada.biografia = entrada.bio;
+    }
+
+    for (const campo of CAMPOS_FAZEDOR_TEXTO) {
+      if (entrada[campo] === undefined) continue;
+      const valor = entrada[campo];
+      if (valor === null || (typeof valor === 'string' && valor.trim() === '')) {
+        dados[campo] = null;
+        continue;
+      }
+      if (typeof valor !== 'string' && typeof valor !== 'number') {
+        throw new ValidationError(`Campo ${campo} inválido`);
+      }
+      const texto = String(valor).trim();
+      if (texto.length > LIMITES_TEXTO[campo]) {
+        throw new ValidationError(`Campo ${campo} deve ter no máximo ${LIMITES_TEXTO[campo]} caracteres`);
+      }
+      if (campo === 'email_publico' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(texto)) {
+        throw new ValidationError('Email público inválido');
+      }
+      dados[campo] = texto;
+    }
+
+    const lat = this.parseCoordenada(entrada.latitude, -90, 90, 'Latitude');
+    const lng = this.parseCoordenada(entrada.longitude, -180, 180, 'Longitude');
+    if (lat !== undefined) dados.latitude = lat;
+    if (lng !== undefined) dados.longitude = lng;
+
+    if ((dados.latitude === null) !== (dados.longitude === null) &&
+        dados.latitude !== undefined && dados.longitude !== undefined) {
+      throw new ValidationError('Latitude e longitude devem ser enviadas juntas');
+    }
+
+    return dados;
+  }
+
+  private parseCoordenada(valor: any, min: number, max: number, nome: string): number | null | undefined {
+    if (valor === undefined) return undefined;
+    if (valor === null || valor === '') return null;
+    const n = typeof valor === 'number' ? valor : Number(String(valor).replace(',', '.'));
+    if (!Number.isFinite(n) || n < min || n > max) {
+      throw new ValidationError(`${nome} inválida (deve estar entre ${min} e ${max})`);
+    }
+    return n;
+  }
+
   async updatePassword(userId: string, dto: UpdatePasswordDto): Promise<void> {
-    const user = await this.userRepository.findByEmail(
-      (await this.userRepository.findById(userId))?.email || ''
-    );
+    const user = await this.userRepository.findByIdComplete(userId);
 
     if (!user) {
       throw new NotFoundError('Usuário não encontrado');
@@ -186,7 +297,13 @@ export class UserService {
 
     const hashedPassword = await hashSenha(dto.nova_senha);
     await this.userRepository.updatePassword(userId, hashedPassword);
-    logger.info(`Senha atualizada para usuário: ${user.email}`);
+    // Terminar todas as sessões (refresh tokens) após mudança de senha
+    await revokeAllUserTokens(userId);
+    logger.info(`Senha atualizada para usuário: ${userId}`);
+  }
+
+  async getFotoPerfilPublicId(userId: string): Promise<string | null> {
+    return this.userRepository.findFotoPerfilPublicId(userId);
   }
 
   async updateFotoPerfil(userId: string, fotoUrl: string, publicId: string): Promise<any> {
@@ -213,9 +330,8 @@ export class UserService {
       fazedor: {
         id: fav.fazedor.id_fazedor,
         nome: fav.fazedor.usuario.nome,
-        email: fav.fazedor.usuario.email,
         tipo_fazedor: fav.fazedor.tipo_fazedor,
-        avaliacao_media: fav.fazedor.avaliacao_media,
+        avaliacao_media: toNumberOrNull(fav.fazedor.avaliacao_media),
         foto_perfil: fav.fazedor.usuario.foto_perfil,
         status_aprovacao: fav.fazedor.status_aprovacao
       },
@@ -236,8 +352,7 @@ export class UserService {
 
     await this.userRepository.addFavorito(userId, fazedorId);
 
-    const user = await this.userRepository.findById(userId);
-    logger.info(`Favorito adicionado: usuário ${user?.email} -> fazedor ${fazedorId}`);
+    logger.info(`Favorito adicionado: usuário ${userId} -> fazedor ${fazedorId}`);
   }
 
   async removeFavorito(userId: string, fazedorId: string): Promise<void> {
@@ -248,8 +363,7 @@ export class UserService {
 
     await this.userRepository.removeFavorito(userId, fazedorId);
 
-    const user = await this.userRepository.findById(userId);
-    logger.info(`Favorito removido: usuário ${user?.email} -> fazedor ${fazedorId}`);
+    logger.info(`Favorito removido: usuário ${userId} -> fazedor ${fazedorId}`);
   }
 
   async getEstatisticas(userId: string): Promise<any> {

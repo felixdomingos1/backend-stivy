@@ -133,7 +133,7 @@ export class EmailService {
     }
 
     if (!this.isConfigured) {
-      logger.info(`[EMAIL SIMULADO] Para: ${options.to}, Assunto: ${options.subject}`);
+      logger.info(`[EMAIL SIMULADO] Assunto: ${options.subject}`);
       this.logEmailForDevelopment(options);
       return;
     }
@@ -167,15 +167,19 @@ export class EmailService {
     }
   }
 
+  /**
+   * Por segurança os códigos OTP/tokens NUNCA são registados em logs.
+   * Excepção opt-in apenas para desenvolvimento local sem SMTP:
+   * NODE_ENV=development E LOG_OTP_DEV=true.
+   */
   private logEmailForDevelopment(options: EmailOptions): void {
-    const otpMatch = options.html.match(/\b\d{6}\b/);
-    if (otpMatch && otpMatch[0]) {
-      logger.info(`🔑 [DEV] Código de verificação para ${options.to}: ${otpMatch[0]}`);
+    if (process.env.NODE_ENV !== 'development' || process.env.LOG_OTP_DEV !== 'true') {
+      return;
     }
 
-    const tokenMatch = options.html.match(/token=([a-f0-9]+)/i);
-    if (tokenMatch && tokenMatch[1]) {
-      logger.info(`🔑 [DEV] Token de recuperação: ${tokenMatch[1]}`);
+    const otpMatch = options.html.match(/\b\d{6}\b/);
+    if (otpMatch && otpMatch[0]) {
+      logger.warn(`[DEV-ONLY LOG_OTP_DEV] Código para ${options.to}: ${otpMatch[0]} (NÃO activar em produção)`);
     }
   }
 

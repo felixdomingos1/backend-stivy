@@ -1,5 +1,6 @@
-import { PrismaClient, Evento } from '@prisma/client';
+import { PrismaClient, Evento, Prisma } from '@prisma/client';
 import prisma from '../config/database';
+import { usuarioPublicoSelect } from '../utils/prisma-selects';
 
 export interface CreateEventoData {
   id_organizador: string;
@@ -13,13 +14,14 @@ export interface CreateEventoData {
   tipo_evento: string;
   imagem_url?: string;
   imagem_public_id?: string;
+  banner_url?: string;
+  banner_public_id?: string;
   imagens?: {
     imagem_url: string;
     imagem_public_id: string;
     ordem: number;
     legenda?: string;
   }[];
-  vagas_disponiveis?: number;
   valor_ingresso?: number;
 }
 
@@ -27,14 +29,13 @@ export interface UpdateEventoData {
   titulo?: string;
   descricao?: string;
   local?: string;
-  latitude?: number;
-  longitude?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   data_inicio?: Date;
   data_fim?: Date;
   tipo_evento?: string;
   imagem_url?: string;
   status?: string;
-  vagas_disponiveis?: number;
   valor_ingresso?: number;
 }
 
@@ -48,11 +49,70 @@ export interface EventoFilters {
   proximos?: boolean;
 }
 
+/** Include padrão de evento: organizador com utilizador público + contagem de participantes. */
+export const eventoInclude = (viewerId?: string) => ({
+  imagens: {
+    orderBy: { ordem: 'asc' as const }
+  },
+  organizador: {
+    select: {
+      id_fazedor: true,
+      id_usuario: true,
+      tipo_fazedor: true,
+      usuario: { select: usuarioPublicoSelect }
+    }
+  },
+  _count: { select: { participantes: true } },
+  // Apenas a linha do próprio utilizador (para calcular eu_participo)
+  participantes: {
+    where: { id_usuario: viewerId ?? '__none__' },
+    select: { id_usuario: true }
+  }
+}) satisfies Prisma.EventoInclude;
+
 export class EventoRepository {
   private prisma: PrismaClient;
 
   constructor() {
     this.prisma = prisma;
+  }
+
+  private buildWhere(filters?: EventoFilters): Prisma.EventoWhereInput {
+    const where: Prisma.EventoWhereInput = {};
+
+    if (filters?.tipo) {
+      where.tipo_evento = filters.tipo as any;
+    }
+
+    if (filters?.status) {
+      where.status = filters.status as any;
+    }
+
+    if (filters?.id_organizador) {
+      where.id_organizador = filters.id_organizador;
+    }
+
+    if (filters?.proximos) {
+      where.data_fim = { gte: new Date() };
+      where.status = 'ativo';
+    }
+
+    if (filters?.data_inicio || filters?.data_fim) {
+      where.data_inicio = {
+        ...(filters.data_inicio && { gte: filters.data_inicio }),
+        ...(filters.data_fim && { lte: filters.data_fim }),
+      };
+    }
+
+    if (filters?.search) {
+      where.OR = [
+        { titulo: { contains: filters.search } },
+        { descricao: { contains: filters.search } },
+        { local: { contains: filters.search } }
+      ];
+    }
+
+    return where;
   }
 
   async create(data: CreateEventoData): Promise<Evento> {
@@ -69,6 +129,8 @@ export class EventoRepository {
         tipo_evento: data.tipo_evento as any,
         imagem_url: data.imagem_url,
         imagem_public_id: data.imagem_public_id,
+        banner_url: data.banner_url,
+        banner_public_id: data.banner_public_id,
         ...(data.imagens && data.imagens.length > 0 && {
           imagens: {
             create: data.imagens.map((img, index) => ({
@@ -79,156 +141,50 @@ export class EventoRepository {
             }))
           }
         }),
-        vagas_disponiveis: data.vagas_disponiveis || 0,
         valor_ingresso: data.valor_ingresso || 0,
         status: 'ativo'
       },
-      include: {
-        imagens: {
-          orderBy: { ordem: 'asc' }
-        }
-      }
+      include: eventoInclude()
     });
   }
 
-  async findById(id: string): Promise<Evento | null> {
+  async findById(id: string, viewerId?: string) {
     return await this.prisma.evento.findUnique({
       where: { id_evento: id },
-      include: {
-        imagens: {
-          orderBy: { ordem: 'asc' }
-        },
-        organizador: {
-          include: {
-            usuario: {
-              select: {
-                nome: true,
-                email: true,
-                foto_perfil: true
-              }
-            }
-          }
-        },
-        participantes: {
-          include: {
-            usuario: {
-              select: {
-                id_usuario: true,
-                nome: true,
-                email: true,
-                foto_perfil: true
-              }
-            }
-          }
-        }
-      }
+      include: eventoInclude(viewerId)
     });
   }
 
-  async findAll(filters?: EventoFilters, skip?: number, take?: number): Promise<Evento[]> {
-    const where: any = {};
-
-    if (filters?.tipo) {
-      where.tipo_evento = filters.tipo;
-    }
-
-    if (filters?.status) {
-      where.status = filters.status;
-    }
-
-    if (filters?.id_organizador) {
-      where.id_organizador = filters.id_organizador;
-    }
-
-    if (filters?.proximos) {
-      where.data_inicio = { gte: new Date() };
-      where.status = 'ativo';
-    }
-
-    if (filters?.data_inicio || filters?.data_fim) {
-      where.data_inicio = {};
-      if (filters.data_inicio) {
-        where.data_inicio.gte = filters.data_inicio;
-      }
-      if (filters.data_fim) {
-        where.data_inicio.lte = filters.data_fim;
-      }
-    }
-
-    if (filters?.search) {
-      where.OR = [
-        { titulo: { contains: filters.search } },
-        { descricao: { contains: filters.search } },
-        { local: { contains: filters.search } }
-      ];
-    }
-
+  async findAll(filters?: EventoFilters, skip?: number, take?: number, viewerId?: string) {
     return await this.prisma.evento.findMany({
-      where,
+      where: this.buildWhere(filters),
       skip: skip || 0,
       take: take || 50,
       orderBy: { data_inicio: 'asc' },
-      include: {
-        imagens: {
-          orderBy: { ordem: 'asc' }
-        },
-        organizador: {
-          include: {
-            usuario: {
-              select: {
-                nome: true,
-                email: true,
-                foto_perfil: true
-              }
-            }
-          }
-        },
-        participantes: {
-          take: 5,
-          include: {
-            usuario: {
-              select: {
-                nome: true,
-                foto_perfil: true
-              }
-            }
-          }
-        }
-      }
+      include: eventoInclude(viewerId)
     });
   }
 
   async count(filters?: EventoFilters): Promise<number> {
-    const where: any = {};
-
-    if (filters?.tipo) {
-      where.tipo_evento = filters.tipo;
-    }
-
-    if (filters?.status) {
-      where.status = filters.status;
-    }
-
-    if (filters?.id_organizador) {
-      where.id_organizador = filters.id_organizador;
-    }
-
-    if (filters?.proximos) {
-      where.data_inicio = { gte: new Date() };
-      where.status = 'ativo';
-    }
-
-    if (filters?.search) {
-      where.OR = [
-        { titulo: { contains: filters.search } },
-        { descricao: { contains: filters.search } }
-      ];
-    }
-
-    return await this.prisma.evento.count({ where });
+    return await this.prisma.evento.count({ where: this.buildWhere(filters) });
   }
 
-  async update(id: string, data: UpdateEventoData): Promise<Evento> {
+  /** Eventos activos não terminados dentro de uma caixa de coordenadas (pré-filtro do Haversine). */
+  async findInBoundingBox(box: { minLat: number; maxLat: number; minLng: number; maxLng: number }, take = 500, viewerId?: string) {
+    return await this.prisma.evento.findMany({
+      where: {
+        status: 'ativo',
+        data_fim: { gte: new Date() },
+        latitude: { gte: box.minLat, lte: box.maxLat },
+        longitude: { gte: box.minLng, lte: box.maxLng },
+      },
+      take,
+      orderBy: { data_inicio: 'asc' },
+      include: eventoInclude(viewerId)
+    });
+  }
+
+  async update(id: string, data: UpdateEventoData) {
     return await this.prisma.evento.update({
       where: { id_evento: id },
       data: {
@@ -242,9 +198,9 @@ export class EventoRepository {
         tipo_evento: data.tipo_evento as any,
         imagem_url: data.imagem_url,
         status: data.status as any,
-        vagas_disponiveis: data.vagas_disponiveis,
         valor_ingresso: data.valor_ingresso
-      }
+      },
+      include: eventoInclude()
     });
   }
 
@@ -269,15 +225,6 @@ export class EventoRepository {
         papel: papel || 'participante'
       }
     });
-
-    await this.prisma.evento.update({
-      where: { id_evento },
-      data: {
-        vagas_disponiveis: {
-          decrement: 1
-        }
-      }
-    });
   }
 
   async removeParticipante(id_evento: string, id_usuario: string): Promise<void> {
@@ -289,31 +236,41 @@ export class EventoRepository {
         }
       }
     });
-
-    await this.prisma.evento.update({
-      where: { id_evento },
-      data: {
-        vagas_disponiveis: {
-          increment: 1
-        }
-      }
-    });
   }
 
-  async getParticipantes(id_evento: string): Promise<any[]> {
-    return await this.prisma.eventoParticipante.findMany({
-      where: { id_evento },
-      include: {
-        usuario: {
-          select: {
-            id_usuario: true,
-            nome: true,
-            email: true,
-            foto_perfil: true
+  /** Participantes paginados. `incluirContactos` só para o organizador. */
+  async getParticipantesPaginados(id_evento: string, skip: number, take: number, incluirContactos: boolean) {
+    const [rows, total] = await Promise.all([
+      this.prisma.eventoParticipante.findMany({
+        where: { id_evento },
+        orderBy: { data_confirmacao: 'asc' },
+        skip,
+        take,
+        select: {
+          id_evento_participante: true,
+          id_usuario: true,
+          papel: true,
+          data_confirmacao: true,
+          presente: true,
+          usuario: {
+            select: {
+              ...usuarioPublicoSelect,
+              ...(incluirContactos && { email: true, telefone: true })
+            }
           }
         }
-      }
+      }),
+      this.prisma.eventoParticipante.count({ where: { id_evento } })
+    ]);
+    return { rows, total };
+  }
+
+  async getParticipanteIds(id_evento: string): Promise<string[]> {
+    const rows = await this.prisma.eventoParticipante.findMany({
+      where: { id_evento },
+      select: { id_usuario: true }
     });
+    return rows.map(r => r.id_usuario);
   }
 
   async isParticipante(id_evento: string, id_usuario: string): Promise<boolean> {
@@ -328,33 +285,20 @@ export class EventoRepository {
     return !!participante;
   }
 
-  async getEventosByOrganizador(id_organizador: string): Promise<Evento[]> {
+  async getEventosByOrganizador(id_organizador: string, viewerId?: string) {
     return await this.prisma.evento.findMany({
       where: { id_organizador },
       orderBy: { data_inicio: 'desc' },
-      include: {
-        participantes: true
-      }
+      include: eventoInclude(viewerId)
     });
   }
 
-  async getEventosByParticipante(id_usuario: string): Promise<any[]> {
+  async getEventosByParticipante(id_usuario: string) {
     const participacoes = await this.prisma.eventoParticipante.findMany({
       where: { id_usuario },
       include: {
         evento: {
-          include: {
-            organizador: {
-              include: {
-                usuario: {
-                  select: {
-                    nome: true,
-                    foto_perfil: true
-                  }
-                }
-              }
-            }
-          }
+          include: eventoInclude(id_usuario)
         }
       },
       orderBy: {
@@ -367,24 +311,25 @@ export class EventoRepository {
   }
 
   async getEstatisticas(id_organizador: string): Promise<any> {
-    const eventos = await this.prisma.evento.findMany({
-      where: { id_organizador },
-      include: {
-        participantes: true
-      }
-    });
+    const [grupos, totalParticipantes, proximos] = await Promise.all([
+      this.prisma.evento.groupBy({
+        by: ['status'],
+        where: { id_organizador },
+        _count: { _all: true }
+      }),
+      this.prisma.eventoParticipante.count({ where: { evento: { id_organizador } } }),
+      this.prisma.evento.count({ where: { id_organizador, status: 'ativo', data_inicio: { gte: new Date() } } })
+    ]);
 
-    const totalEventos = eventos.length;
-    const eventosAtivos = eventos.filter(e => e.status === 'ativo').length;
-    const eventosConcluidos = eventos.filter(e => e.status === 'concluido').length;
-    const eventosCancelados = eventos.filter(e => e.status === 'cancelado').length;
-    const totalParticipantes = eventos.reduce((sum, e) => sum + e.participantes.length, 0);
+    const porStatus = (s: string) => grupos.find(g => g.status === s)?._count._all ?? 0;
+    const totalEventos = grupos.reduce((sum, g) => sum + g._count._all, 0);
 
     return {
       total_eventos: totalEventos,
-      eventos_ativos: eventosAtivos,
-      eventos_concluidos: eventosConcluidos,
-      eventos_cancelados: eventosCancelados,
+      eventos_ativos: porStatus('ativo'),
+      eventos_concluidos: porStatus('concluido'),
+      eventos_cancelados: porStatus('cancelado'),
+      eventos_proximos: proximos,
       total_participantes: totalParticipantes,
       media_participantes_por_evento: totalEventos > 0 ? totalParticipantes / totalEventos : 0
     };
