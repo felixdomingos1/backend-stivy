@@ -125,6 +125,7 @@ model Usuario {
 
   stories                 Story[]
   curtidasStory           StoryCurtida[]
+  comentariosStory        StoryComentario[]
   reset_password_code     String?        @db.VarChar(10)
   reset_password_expira   DateTime?
   reset_password_attempts Int            @default(0)
@@ -466,6 +467,7 @@ model Story {
 
   visualizacoes StoryVisualizacao[]
   curtidas      StoryCurtida[]
+  comentarios   StoryComentario[]
 
   usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
@@ -500,6 +502,21 @@ model StoryCurtida {
 
   @@unique([id_story, id_usuario])
   @@map("STORY_CURTIDA")
+}
+
+model StoryComentario {
+  id_comentario String @id @default(uuid()) @db.Char(36)
+  id_story      String @db.Char(36)
+  id_usuario    String @db.Char(36)
+  comentario    String @db.VarChar(500)
+
+  data_criacao DateTime @default(now())
+
+  story   Story   @relation(fields: [id_story], references: [id_story], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@index([id_story, data_criacao])
+  @@map("STORY_COMENTARIO")
 }
 
 enum StoryTipo {

@@ -76,6 +76,7 @@ export class StoryController {
           ...rest,
           total_visualizacoes: _count?.visualizacoes ?? 0,
           total_curtidas: _count?.curtidas ?? 0,
+          total_comentarios: _count?.comentarios ?? 0,
           ja_visualizou: !!viewerId && visualizacoes.length > 0,
           curti: !!viewerId && curtidas.length > 0,
           ja_curtiu: !!viewerId && curtidas.length > 0,
@@ -212,6 +213,65 @@ export class StoryController {
     }
   }
 
+  async listarComentarios(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      await this.getActiveStoryOrThrow(id);
+      const comentarios = await this.storyRepository.findComentarios(id);
+      res.json({ success: true, data: comentarios });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async comentarStory(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const story = await this.getActiveStoryOrThrow(id);
+      const comentario = await this.storyRepository.addComentario(id, req.usuarioId, String(req.body.comentario).trim());
+      if (story.id_usuario !== req.usuarioId) {
+        await this.notificacaoRepository.createSafe({
+          id_usuario: story.id_usuario,
+          titulo: 'Novo comentário no seu story',
+          mensagem: `${req.usuario?.nome ?? 'Alguém'} comentou: "${comentario.comentario.slice(0, 80)}"`,
+          tipo: 'comentario',
+          link: `/story/${id}`,
+          id_ator: req.usuarioId
+        });
+      }
+      res.status(201).json({ success: true, data: comentario });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /** Apaga um comentário: pode o autor do comentário ou o dono do story. */
+  async apagarComentario(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const comentario = await this.storyRepository.findComentarioById(id);
+      if (!comentario) {
+        throw new NotFoundError('Comentário não encontrado');
+      }
+      if (comentario.id_usuario !== req.usuarioId && comentario.story.id_usuario !== req.usuarioId) {
+        res.status(403).json({ success: false, error: 'Não pode apagar este comentário' });
+        return;
+      }
+      await this.storyRepository.deleteComentario(id);
+      res.json({ success: true, message: 'Comentário apagado' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   async meusStories(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {
@@ -227,6 +287,7 @@ export class StoryController {
           ...story,
           total_visualizacoes: _count?.visualizacoes ?? 0,
           total_curtidas: _count?.curtidas ?? 0,
+          total_comentarios: _count?.comentarios ?? 0,
           sou_dono: true
         }))
       });

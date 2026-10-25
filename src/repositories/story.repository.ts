@@ -29,7 +29,7 @@ export class StoryRepository {
         expira_em: { gt: new Date() }
       },
       include: {
-        _count: { select: { visualizacoes: true, curtidas: true } }
+        _count: { select: { visualizacoes: true, curtidas: true, comentarios: true } }
       },
       orderBy: { data_criacao: 'desc' }
     });
@@ -46,7 +46,7 @@ export class StoryRepository {
       },
       include: {
         usuario: { select: usuarioPublicoSelect },
-        _count: { select: { visualizacoes: true, curtidas: true } },
+        _count: { select: { visualizacoes: true, curtidas: true, comentarios: true } },
         visualizacoes: {
           where: { id_usuario: viewerId ?? '__none__' },
           select: { id_usuario: true }
@@ -129,6 +129,34 @@ export class StoryRepository {
         id_usuario
       }
     });
+  }
+
+  async addComentario(id_story: string, id_usuario: string, comentario: string): Promise<any> {
+    return await this.prisma.storyComentario.create({
+      data: { id_story, id_usuario, comentario },
+      include: { usuario: { select: usuarioPublicoSelect } }
+    });
+  }
+
+  /** Comentários de um story, do mais antigo para o mais recente. */
+  async findComentarios(id_story: string, limit: number = 100): Promise<any[]> {
+    return await this.prisma.storyComentario.findMany({
+      where: { id_story },
+      include: { usuario: { select: usuarioPublicoSelect } },
+      orderBy: { data_criacao: 'asc' },
+      take: limit
+    });
+  }
+
+  async findComentarioById(id_comentario: string): Promise<any> {
+    return await this.prisma.storyComentario.findUnique({
+      where: { id_comentario },
+      include: { story: { select: { id_usuario: true } } }
+    });
+  }
+
+  async deleteComentario(id_comentario: string): Promise<void> {
+    await this.prisma.storyComentario.delete({ where: { id_comentario } });
   }
 
   async removeCurtida(id_story: string, id_usuario: string): Promise<void> {

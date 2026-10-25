@@ -23,3 +23,12 @@ export const visualizarStoryValidation = [
   param('id')
     .isUUID().withMessage('ID de story inválido'),
 ];
+
+export const comentarStoryValidation = [
+  param('id')
+    .isUUID().withMessage('ID de story inválido'),
+  body('comentario')
+    .isString().withMessage('Comentário é obrigatório')
+    .trim()
+    .isLength({ min: 1, max: 500 }).withMessage('Comentário deve ter entre 1 e 500 caracteres'),
+];

@@ -1,9 +1,10 @@
 import { Router } from 'express';
+import { param } from 'express-validator';
 import multer from 'multer';
 import { autenticar } from '../middleware/auth.middleware';
 import { handleUploadError } from '../middleware/upload.middleware';
 import { validate } from '../middleware/validation.middleware';
-import { createStoryValidation, storyIdValidation, visualizarStoryValidation } from '../validations/story.validation';
+import { comentarStoryValidation, createStoryValidation, storyIdValidation, visualizarStoryValidation } from '../validations/story.validation';
 import { StoryController } from '../controller/story.controller';
 import { autenticacaoOpcional } from '../services/authorization.service';
 
@@ -79,6 +80,24 @@ router.delete('/:id/curtir',
   storyIdValidation,
   validate,
   storyController.descurtirStory.bind(storyController)
+);
+
+router.get('/:id/comentarios',
+  storyIdValidation,
+  validate,
+  storyController.listarComentarios.bind(storyController)
+);
+
+router.post('/:id/comentarios',
+  comentarStoryValidation,
+  validate,
+  storyController.comentarStory.bind(storyController)
+);
+
+router.delete('/comentarios/:id',
+  param('id').isUUID().withMessage('ID de comentário inválido'),
+  validate,
+  storyController.apagarComentario.bind(storyController)
 );
 
 router.delete('/:id',
