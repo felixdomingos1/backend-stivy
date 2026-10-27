@@ -127,6 +127,7 @@ export class FashionController {
         max_valor,
         status,
         search,
+        tipo_fazedor,
         page = 1,
         limit = 20
       } = req.query;
@@ -136,7 +137,8 @@ export class FashionController {
         min_valor: min_valor ? parseFloat(min_valor as string) : undefined,
         max_valor: max_valor ? parseFloat(max_valor as string) : undefined,
         status: status as string,
-        search: search as string
+        search: search as string,
+        tipos_fazedor: tipo_fazedor ? String(tipo_fazedor).split(',').map(t => t.trim()).filter(Boolean) : undefined
       };
 
       const result = await this.fashionService.listServicos(

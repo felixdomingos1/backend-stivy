@@ -1,3 +1,4 @@
+import { FAZEDOR_TIPOS } from '../utils/fazedor-tipos';
 import { ServicoRepository, ServicoFilters } from '../repositories/servico.repository';
 import { FazedorRepository, FazedorFilters } from '../repositories/fazedor.repository';
 import { AvaliacaoRepository } from '../repositories/avaliacao.repository';
@@ -319,7 +320,7 @@ export class FashionService {
   }
 
   async getTiposFazedores(): Promise<string[]> {
-    return ['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer', 'videografo', 'designer', 'influenciador', 'criador_conteudo', 'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade', 'marketing', 'desfiles', 'casting', 'moda', 'outros'];
+    return FAZEDOR_TIPOS;
   }
 
   async search(
@@ -375,12 +376,7 @@ export class FashionService {
     if (tipo === 'fazedores' || tipo === 'todos') {
       // `tipo_fazedor` é um enum no Prisma — `contains` não é suportado.
       // Filtramos por igualdade quando o termo corresponder a um tipo válido.
-      const enumValues = [
-        'agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer',
-        'videografo', 'designer', 'influenciador', 'criador_conteudo',
-        'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade',
-        'marketing', 'desfiles', 'casting', 'moda', 'outros',
-      ];
+      const enumValues = FAZEDOR_TIPOS as string[];
       const termoLower = searchTerm.toLowerCase();
       const tiposCorrespondentes = enumValues.filter(
         (t) => t.includes(termoLower) || termoLower.includes(t)

@@ -1,4 +1,5 @@
 import { body, query, param } from 'express-validator';
+import { FAZEDOR_TIPOS } from '../utils/fazedor-tipos';
 import { DENUNCIA_MOTIVOS } from '../services/servico-denuncia.service';
 
 export const createServicoValidation = [
@@ -76,6 +77,12 @@ export const listServicosValidation = [
     .optional()
     .trim(),
 
+  // Lista separada por vírgulas: ?tipo_fazedor=agencia,modelo_freelancer
+  query('tipo_fazedor')
+    .optional()
+    .custom((value: string) => String(value).split(',').every(t => FAZEDOR_TIPOS.includes(t.trim() as any)))
+    .withMessage('Tipo de fazedor inválido'),
+
   query('min_valor')
     .optional()
     .isFloat({ min: 0 })
@@ -120,7 +127,7 @@ export const listServicosValidation = [
 export const listFazedoresValidation = [
   query('tipo_fazedor')
     .optional()
-    .isIn(['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer', 'videografo', 'designer', 'influenciador', 'criador_conteudo', 'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade', 'marketing', 'desfiles', 'casting', 'moda', 'outros'])
+    .custom((value: string) => String(value).split(',').every(t => FAZEDOR_TIPOS.includes(t.trim() as any)))
     .withMessage('Tipo de fazedor inválido'),
 
   query('status_aprovacao')

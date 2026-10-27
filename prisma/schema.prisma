@@ -37,6 +37,9 @@ enum FazedorTipo {
   desfiles
   casting
   moda
+  trancista
+  manicure
+  esteticista
   outros
 }
 
@@ -248,12 +251,12 @@ model Modelo {
   altura Decimal? @db.Decimal(3, 2)
   peso   Decimal? @db.Decimal(5, 2)
 
-  busto   Int?
-  cintura Int?
-  quadril Int?
+  busto   Decimal? @db.Decimal(5, 1)
+  cintura Decimal? @db.Decimal(5, 1)
+  quadril Decimal? @db.Decimal(5, 1)
 
   sapato Int?
-  roupa  Int?
+  roupa  Decimal? @db.Decimal(4, 1)
 
   cabelo String? @db.VarChar(50)
   olhos  String? @db.VarChar(50)
@@ -285,12 +288,12 @@ model ModeloFreelancer {
   nome_artistico String   @db.VarChar(100)
   altura         Decimal? @db.Decimal(3, 2)
   peso           Decimal? @db.Decimal(5, 2)
-  busto          Int?
-  cintura        Int?
-  quadril        Int?
+  busto          Decimal? @db.Decimal(5, 1)
+  cintura        Decimal? @db.Decimal(5, 1)
+  quadril        Decimal? @db.Decimal(5, 1)
 
   sapato Int?
-  roupa  Int?
+  roupa  Decimal? @db.Decimal(4, 1)
 
   cabelo String? @db.VarChar(50)
   olhos  String? @db.VarChar(50)
@@ -838,8 +841,17 @@ model Mensagem {
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  conversa  Conversa @relation(fields: [id_conversa], references: [id_conversa], onDelete: Cascade)
-  remetente Usuario  @relation(fields: [id_remetente], references: [id_usuario], onDelete: Cascade)
+  /// Apagada para todos pelo remetente (conteúdo e média são limpos).
+  apagada     Boolean @default(false)
+  /// Mensagem a que esta responde (citação).
+  id_resposta String? @db.Char(36)
+  /// Reacções: { "<id_usuario>": "❤️" }.
+  reacoes     Json?
+
+  conversa  Conversa  @relation(fields: [id_conversa], references: [id_conversa], onDelete: Cascade)
+  remetente Usuario   @relation(fields: [id_remetente], references: [id_usuario], onDelete: Cascade)
+  resposta  Mensagem? @relation("MensagemRespostas", fields: [id_resposta], references: [id_mensagem], onDelete: SetNull, onUpdate: NoAction)
+  respostas Mensagem[] @relation("MensagemRespostas")
 
   @@index([id_conversa, created_at])
   @@map("MENSAGEM")

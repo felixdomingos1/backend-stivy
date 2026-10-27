@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE `MENSAGEM` ADD COLUMN `apagada` BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN `id_resposta` CHAR(36) NULL,
+    ADD COLUMN `reacoes` JSON NULL;
+
+-- AddForeignKey
+ALTER TABLE `MENSAGEM` ADD CONSTRAINT `MENSAGEM_id_resposta_fkey` FOREIGN KEY (`id_resposta`) REFERENCES `MENSAGEM`(`id_mensagem`) ON DELETE SET NULL ON UPDATE NO ACTION;

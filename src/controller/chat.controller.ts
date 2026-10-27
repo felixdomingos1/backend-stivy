@@ -92,6 +92,34 @@ export class ChatController {
     }
   }
 
+  async apagarMensagem(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const mensagem = await this.chatService.apagarMensagem(id, req.usuarioId);
+      res.json({ success: true, data: mensagem });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  async reagirMensagem(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ error: 'Não autorizado' });
+        return;
+      }
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const mensagem = await this.chatService.reagirMensagem(id, req.usuarioId, req.body?.emoji);
+      res.json({ success: true, data: mensagem });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   async enviarMensagem(req: AuthRequest, res: Response): Promise<void> {
     try {
       const errors = validationResult(req);
@@ -106,7 +134,7 @@ export class ChatController {
       }
 
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const { conteudo, tipo } = req.body;
+      const { conteudo, tipo, id_resposta } = req.body;
 
       let midiaUrl: string | null = null;
       if (req.file) {
@@ -126,7 +154,8 @@ export class ChatController {
         req.usuarioId,
         conteudo,
         midiaUrl ? 'imagem' : (tipo || 'texto'),
-        midiaUrl
+        midiaUrl,
+        typeof id_resposta === 'string' && id_resposta ? id_resposta : null
       );
 
       res.status(201).json({

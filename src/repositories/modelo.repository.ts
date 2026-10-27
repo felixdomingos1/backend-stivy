@@ -58,7 +58,8 @@ export class ModeloRepository {
     if (filters?.search) {
       where.OR = [
         { nome_completo: { contains: filters.search } },
-        { nome_artistico: { contains: filters.search } }
+        { nome_artistico: { contains: filters.search } },
+        { agencia: { nome_agencia: { contains: filters.search } } }
       ];
     }
     return where;

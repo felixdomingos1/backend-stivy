@@ -82,6 +82,8 @@ describe('ChatService', () => {
       createConversation: jest.fn(),
       findMessagesByConversation: jest.fn(),
       createMessage: jest.fn(),
+      findMessageById: jest.fn(),
+      updateMessage: jest.fn(),
       markMessageAsRead: jest.fn(),
       markAllAsRead: jest.fn(),
       getUnreadCount: jest.fn(),
@@ -204,6 +206,7 @@ describe('ChatService', () => {
         conteudo: 'Hello!',
         tipo: 'texto',
         midia_url: null,
+        id_resposta: null,
       });
       expect(notificacaoRepository.createSafe).toHaveBeenCalledTimes(1);
     });
@@ -332,6 +335,54 @@ describe('ChatService', () => {
 
       expect(result.data[0].id_mensagem).toBe('old-msg');
       expect(result.data[1].id_mensagem).toBe('new-msg');
+    });
+  });
+
+  describe('apagarMensagem', () => {
+    it('limpa conteúdo e marca como apagada quando é o remetente', async () => {
+      chatRepository.findMessageById.mockResolvedValue(mockMessage as any);
+      chatRepository.findConversationById.mockResolvedValue(mockConversation as any);
+      chatRepository.updateMessage.mockResolvedValue({ ...mockMessage, apagada: true, conteudo: '' } as any);
+
+      const result: any = await chatService.apagarMensagem(messageId, userId);
+
+      expect(result.apagada).toBe(true);
+      expect(chatRepository.updateMessage).toHaveBeenCalledWith(
+        messageId,
+        expect.objectContaining({ apagada: true, conteudo: '', midia_url: null })
+      );
+    });
+
+    it('impede apagar mensagens de outra pessoa', async () => {
+      chatRepository.findMessageById.mockResolvedValue(mockMessage as any);
+
+      await expect(chatService.apagarMensagem(messageId, userId2)).rejects.toBeInstanceOf(ForbiddenError);
+      expect(chatRepository.updateMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reagirMensagem', () => {
+    beforeEach(() => {
+      chatRepository.findConversationById.mockResolvedValue(mockConversation as any);
+      chatRepository.updateMessage.mockImplementation(async (_id: string, data: any) => ({ ...mockMessage, ...data }));
+    });
+
+    it('adiciona a reacção do utilizador', async () => {
+      chatRepository.findMessageById.mockResolvedValue({ ...mockMessage, reacoes: null } as any);
+      await chatService.reagirMensagem(messageId, userId2, '❤️');
+      expect(chatRepository.updateMessage).toHaveBeenCalledWith(messageId, { reacoes: { [userId2]: '❤️' } });
+    });
+
+    it('o mesmo emoji remove a reacção', async () => {
+      chatRepository.findMessageById.mockResolvedValue({ ...mockMessage, reacoes: { [userId2]: '❤️' } } as any);
+      await chatService.reagirMensagem(messageId, userId2, '❤️');
+      const data = chatRepository.updateMessage.mock.calls[0][1] as any;
+      expect(data.reacoes).not.toHaveProperty(userId2);
+    });
+
+    it('não permite reagir a mensagens apagadas', async () => {
+      chatRepository.findMessageById.mockResolvedValue({ ...mockMessage, apagada: true } as any);
+      await expect(chatService.reagirMensagem(messageId, userId2, '🔥')).rejects.toBeInstanceOf(ValidationError);
     });
   });
 });

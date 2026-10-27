@@ -166,7 +166,9 @@ export class FazedorRepository {
     const where: any = {};
 
     if (filters?.tipo_fazedor) {
-      where.tipo_fazedor = filters.tipo_fazedor;
+      // Aceita um tipo ou vários separados por vírgula (ex.: um grupo "Beleza").
+      const tipos = filters.tipo_fazedor.split(',').map(t => t.trim()).filter(Boolean);
+      where.tipo_fazedor = tipos.length > 1 ? { in: tipos } : tipos[0];
     }
 
     if (filters?.status_aprovacao) {
@@ -275,7 +277,9 @@ export class FazedorRepository {
     const where: any = {};
 
     if (filters?.tipo_fazedor) {
-      where.tipo_fazedor = filters.tipo_fazedor;
+      // Aceita um tipo ou vários separados por vírgula (ex.: um grupo "Beleza").
+      const tipos = filters.tipo_fazedor.split(',').map(t => t.trim()).filter(Boolean);
+      where.tipo_fazedor = tipos.length > 1 ? { in: tipos } : tipos[0];
     }
 
     if (filters?.status_aprovacao) {

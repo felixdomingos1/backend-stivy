@@ -19,8 +19,16 @@ const TEXTO_CAMPOS: Record<string, number> = {
   experiencia: 5000,
   habilidades: 5000
 };
-const INT_CAMPOS = ['busto', 'cintura', 'quadril', 'sapato', 'roupa', 'idade'];
-const DECIMAL_CAMPOS: Record<string, number> = { altura: 9.99, peso: 999.99 };
+// Só a idade e o número do sapato são inteiros; as restantes medidas aceitam decimais.
+const INT_CAMPOS = ['sapato', 'idade'];
+const DECIMAL_CAMPOS: Record<string, number> = {
+  altura: 9.99,
+  peso: 999.99,
+  busto: 999.9,
+  cintura: 999.9,
+  quadril: 999.9,
+  roupa: 999.9
+};
 
 /**
  * Allowlist dos campos editáveis de um modelo. Nunca aceita id_agencia, id_modelo,

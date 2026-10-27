@@ -5,7 +5,7 @@ import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { UpdateUserDto, UpdatePasswordDto } from '../dtos/user.dto';
 import { compararSenha, hashSenha } from '../utils/bcrypt';
 import { revokeAllUserTokens } from '../utils/jwt';
-import { ValidationError, AuthenticationError, NotFoundError } from '../utils/errors';
+import { ValidationError, NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
 import prisma from '../config/database'; // ✅ Importar diretamente
 
@@ -183,16 +183,17 @@ export class UserService {
       }
     }
 
-    if (fazedor && fazedor.tipo_fazedor === 'modelo_freelancer' && fazedor.modeloFreelancer) {
+    // Modelo freelancer: cria o sub-perfil se ainda não existir (contas antigas), senão as medidas perdiam-se.
+    if (fazedor && fazedor.tipo_fazedor === 'modelo_freelancer') {
       const modeloData: any = {};
       if (dto.nome_artistico !== undefined) modeloData.nome_artistico = dto.nome_artistico;
       if (dto.altura !== undefined) modeloData.altura = dto.altura ? parseFloat(String(dto.altura).replace(',', '.')) : null;
       if (dto.peso !== undefined) modeloData.peso = dto.peso ? parseFloat(String(dto.peso).replace(',', '.')) : null;
-      if (dto.busto !== undefined) modeloData.busto = dto.busto ? parseInt(dto.busto) : null;
-      if (dto.cintura !== undefined) modeloData.cintura = dto.cintura ? parseInt(dto.cintura) : null;
-      if (dto.quadril !== undefined) modeloData.quadril = dto.quadril ? parseInt(dto.quadril) : null;
+      if (dto.busto !== undefined) modeloData.busto = dto.busto ? parseFloat(String(dto.busto).replace(',', '.')) : null;
+      if (dto.cintura !== undefined) modeloData.cintura = dto.cintura ? parseFloat(String(dto.cintura).replace(',', '.')) : null;
+      if (dto.quadril !== undefined) modeloData.quadril = dto.quadril ? parseFloat(String(dto.quadril).replace(',', '.')) : null;
       if (dto.sapato !== undefined) modeloData.sapato = dto.sapato ? parseInt(dto.sapato) : null;
-      if (dto.roupa !== undefined) modeloData.roupa = dto.roupa ? parseInt(dto.roupa) : null;
+      if (dto.roupa !== undefined) modeloData.roupa = dto.roupa ? parseFloat(String(dto.roupa).replace(',', '.')) : null;
       if (dto.cabelo !== undefined) modeloData.cabelo = dto.cabelo;
       if (dto.olhos !== undefined) modeloData.olhos = dto.olhos;
       if (dto.idade !== undefined) modeloData.idade = dto.idade ? parseInt(dto.idade) : null;
@@ -202,9 +203,14 @@ export class UserService {
       if (dto.status_modelo !== undefined) modeloData.status = dto.status_modelo;
 
       if (Object.keys(modeloData).length > 0) {
-        await prisma.modeloFreelancer.update({
+        await prisma.modeloFreelancer.upsert({
           where: { id_fazedor: fazedor.id_fazedor },
-          data: modeloData
+          update: modeloData,
+          create: {
+            ...modeloData,
+            id_fazedor: fazedor.id_fazedor,
+            nome_artistico: modeloData.nome_artistico || updatedUser.nome
+          }
         });
       }
     }
@@ -283,6 +289,29 @@ export class UserService {
     return n;
   }
 
+  /**
+   * Elimina a própria conta depois de confirmar a senha. Tudo o que pertence ao
+   * utilizador (perfil de fazedor, publicações, eventos, stories, mensagens…)
+   * é apagado em cascata pela base de dados. Administradores não se podem eliminar.
+   */
+  async eliminarConta(userId: string, senha: string): Promise<void> {
+    const user = await this.userRepository.findByIdComplete(userId);
+    if (!user) {
+      throw new NotFoundError('Usuário não encontrado');
+    }
+    if (user.tipo === 'sistem_admin') {
+      throw new ValidationError('Contas de administrador não podem ser eliminadas pela app');
+    }
+    const isPasswordValid = await compararSenha(senha ?? '', user.senha_hash);
+    if (!isPasswordValid) {
+      // 400 e não 401: um 401 faz a app pensar que a sessão expirou e termina-a.
+      throw new ValidationError('Senha incorrecta');
+    }
+    await revokeAllUserTokens(userId);
+    await prisma.usuario.delete({ where: { id_usuario: userId } });
+    logger.info(`Conta eliminada pelo próprio utilizador: ${userId}`);
+  }
+
   async updatePassword(userId: string, dto: UpdatePasswordDto): Promise<void> {
     const user = await this.userRepository.findByIdComplete(userId);
 
@@ -292,7 +321,8 @@ export class UserService {
 
     const isPasswordValid = await compararSenha(dto.senha_atual, user.senha_hash);
     if (!isPasswordValid) {
-      throw new AuthenticationError('Senha atual incorreta');
+      // 400 e não 401: um 401 faz a app pensar que a sessão expirou e termina-a.
+      throw new ValidationError('Senha atual incorrecta');
     }
 
     const hashedPassword = await hashSenha(dto.nova_senha);

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { body } from 'express-validator';
 import { autenticar } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validation.middleware';
 import { uploadSingle, handleUploadError } from '../middleware/upload.middleware';
@@ -36,6 +37,22 @@ router.put(
   messageIdValidation,
   validate,
   chatController.marcarMensagemComoLida.bind(chatController)
+);
+
+// Apagar para todos (só o remetente) e reagir (corpo { emoji }; vazio remove).
+router.delete(
+  '/mensagens/:id',
+  messageIdValidation,
+  validate,
+  chatController.apagarMensagem.bind(chatController)
+);
+
+router.put(
+  '/mensagens/:id/reacao',
+  messageIdValidation,
+  body('emoji').optional({ values: 'null' }).isString().isLength({ max: 16 }).withMessage('Emoji inválido'),
+  validate,
+  chatController.reagirMensagem.bind(chatController)
 );
 
 router.put(

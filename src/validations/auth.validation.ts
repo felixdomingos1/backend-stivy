@@ -1,4 +1,5 @@
 import { body, param } from 'express-validator';
+import { FAZEDOR_TIPOS } from '../utils/fazedor-tipos';
 
 export const registerValidation = [
   body('nome')
@@ -31,7 +32,7 @@ export const registerValidation = [
 
   body('tipo_fazedor')
     .optional()
-    .isIn(['agencia', 'estilista', 'maquiador', 'fotografo', 'modelo_freelancer', 'videografo', 'designer', 'influenciador', 'criador_conteudo', 'cabeleireiro', 'barbeiro', 'produtor_eventos', 'publicidade', 'marketing', 'desfiles', 'casting', 'moda', 'outros'])
+    .isIn(FAZEDOR_TIPOS)
     .withMessage('Tipo de fazedor inválido')
     .custom((value, { req }) => {
       if (req.body.tipo === 'fazedor' && !value) {
@@ -80,11 +81,11 @@ export const updateProfileValidation = [
   body('nome_artistico').optional({ values: 'falsy' }).isLength({ max: 100 }).withMessage('Nome artístico inválido'),
   body('altura').optional({ values: 'falsy' }).matches(/^\d+([.,]\d+)?$/).withMessage('Altura inválida'),
   body('peso').optional({ values: 'falsy' }).matches(/^\d+([.,]\d+)?$/).withMessage('Peso inválido'),
-  body('busto').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Busto inválido'),
-  body('cintura').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Cintura inválida'),
-  body('quadril').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Quadril inválido'),
+  body('busto').optional({ values: 'falsy' }).matches(/^\d+([.,]\d+)?$/).withMessage('Busto inválido'),
+  body('cintura').optional({ values: 'falsy' }).matches(/^\d+([.,]\d+)?$/).withMessage('Cintura inválida'),
+  body('quadril').optional({ values: 'falsy' }).matches(/^\d+([.,]\d+)?$/).withMessage('Quadril inválido'),
   body('sapato').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Sapato inválido'),
-  body('roupa').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Roupa inválida'),
+  body('roupa').optional({ values: 'falsy' }).matches(/^\d+([.,]\d+)?$/).withMessage('Roupa inválida'),
   body('cabelo').optional({ values: 'falsy' }).isLength({ max: 50 }).withMessage('Cor de cabelo inválida'),
   body('olhos').optional({ values: 'falsy' }).isLength({ max: 50 }).withMessage('Cor dos olhos inválida'),
   body('idade').optional({ values: 'falsy' }).isInt({ min: 0, max: 120 }).withMessage('Idade inválida'),

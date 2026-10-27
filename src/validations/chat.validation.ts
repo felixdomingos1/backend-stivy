@@ -39,6 +39,11 @@ export const sendMessageValidation = [
     .optional()
     .isIn(['texto', 'imagem'])
     .withMessage('Tipo deve ser texto ou imagem'),
+
+  body('id_resposta')
+    .optional({ values: 'falsy' })
+    .isUUID()
+    .withMessage('Mensagem a responder inválida'),
 ];
 
 export const getConversationMessagesValidation = [

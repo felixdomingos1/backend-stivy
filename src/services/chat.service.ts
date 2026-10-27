@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { ChatRepository, CreateConversaData } from '../repositories/chat.repository';
 import { NotificacaoRepository } from '../repositories/notificacao.repository';
 import { ValidationError, NotFoundError } from '../utils/errors';
@@ -8,6 +9,8 @@ import logger from '../utils/logger';
 export const CHAT_EVENTS = {
   NEW_MESSAGE: 'chat:newMessage',
   READ: 'chat:read',
+  /** Mensagem alterada (apagada para todos ou reacções). */
+  MESSAGE_UPDATED: 'chat:messageUpdated',
 } as const;
 
 type Participante = {
@@ -175,7 +178,8 @@ export class ChatService {
     id_remetente: string,
     conteudo: string | undefined,
     tipo: string = 'texto',
-    midia_url?: string | null
+    midia_url?: string | null,
+    id_resposta?: string | null
   ) {
     try {
       const texto = (conteudo ?? '').trim();
@@ -192,12 +196,21 @@ export class ChatService {
 
       const conversa = await this.getConversaComoParticipante(id_conversa, id_remetente);
 
+      // A mensagem citada tem de ser desta conversa.
+      if (id_resposta) {
+        const citada = await this.chatRepository.findMessageById(id_resposta);
+        if (!citada || citada.id_conversa !== id_conversa) {
+          throw new ValidationError('Mensagem a responder inválida');
+        }
+      }
+
       const mensagem = await this.chatRepository.createMessage({
         id_conversa,
         id_remetente,
         conteudo: texto,
         tipo: tipoFinal,
         midia_url: midia_url ?? null,
+        id_resposta: id_resposta || null,
       });
 
       const ids = conversa.participantes.map((p) => p.id_usuario);
@@ -244,6 +257,68 @@ export class ChatService {
         next_before: has_more && pagina.length > 0 ? pagina[0].created_at.toISOString() : null,
       },
     };
+  }
+
+  /** Apaga para todos: só o remetente. Mantém a linha (placeholder "Mensagem apagada"). */
+  async apagarMensagem(id_mensagem: string, id_usuario: string) {
+    const mensagem = await this.chatRepository.findMessageById(id_mensagem);
+    if (!mensagem) {
+      throw new NotFoundError('Mensagem não encontrada');
+    }
+    if (mensagem.id_remetente !== id_usuario) {
+      throw new ForbiddenError('Só pode apagar as suas próprias mensagens');
+    }
+    const conversa = await this.getConversaComoParticipante(mensagem.id_conversa, id_usuario);
+    const atualizada = await this.chatRepository.updateMessage(id_mensagem, {
+      apagada: true,
+      conteudo: '',
+      midia_url: null,
+      reacoes: Prisma.DbNull,
+    });
+    this.emitParaConversa(
+      mensagem.id_conversa,
+      conversa.participantes.map((p) => p.id_usuario),
+      CHAT_EVENTS.MESSAGE_UPDATED,
+      atualizada
+    );
+    return atualizada;
+  }
+
+  /**
+   * Reage a uma mensagem. Uma reacção por pessoa: o mesmo emoji (ou vazio)
+   * remove-a, outro emoji substitui-a.
+   */
+  async reagirMensagem(id_mensagem: string, id_usuario: string, emoji?: string | null) {
+    const mensagem = await this.chatRepository.findMessageById(id_mensagem);
+    if (!mensagem) {
+      throw new NotFoundError('Mensagem não encontrada');
+    }
+    if (mensagem.apagada) {
+      throw new ValidationError('Não é possível reagir a uma mensagem apagada');
+    }
+    const conversa = await this.getConversaComoParticipante(mensagem.id_conversa, id_usuario);
+
+    const reacoes: Record<string, string> =
+      mensagem.reacoes && typeof mensagem.reacoes === 'object' && !Array.isArray(mensagem.reacoes)
+        ? { ...(mensagem.reacoes as Record<string, string>) }
+        : {};
+    const valor = (emoji ?? '').trim();
+    if (!valor || reacoes[id_usuario] === valor) {
+      delete reacoes[id_usuario];
+    } else {
+      reacoes[id_usuario] = valor;
+    }
+
+    const atualizada = await this.chatRepository.updateMessage(id_mensagem, {
+      reacoes: Object.keys(reacoes).length ? reacoes : Prisma.DbNull,
+    });
+    this.emitParaConversa(
+      mensagem.id_conversa,
+      conversa.participantes.map((p) => p.id_usuario),
+      CHAT_EVENTS.MESSAGE_UPDATED,
+      atualizada
+    );
+    return atualizada;
   }
 
   async marcarMensagemComoLida(id_mensagem: string, id_usuario: string) {

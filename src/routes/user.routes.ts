@@ -15,6 +15,8 @@ router.get('/todos', verificarAdmin, userController.pegarTodos.bind(userControll
 router.get('/perfil', userController.getPerfil.bind(userController));
 router.put('/perfil', updateProfileValidation, userController.atualizarPerfil.bind(userController));
 router.put('/senha', updatePasswordValidation, userController.atualizarSenha.bind(userController));
+// Exige { senha } no corpo para confirmar.
+router.delete('/conta', userController.eliminarConta.bind(userController));
 
 router.put('/foto-perfil',
   uploadFotoPerfil,

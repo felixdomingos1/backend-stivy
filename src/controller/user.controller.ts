@@ -203,6 +203,19 @@ export class UserController {
     }
   }
 
+  async eliminarConta(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.usuarioId) {
+        res.status(401).json({ success: false, error: 'Não autorizado' });
+        return;
+      }
+      await this.userService.eliminarConta(req.usuarioId, req.body?.senha);
+      res.json({ success: true, message: 'Conta eliminada com sucesso' });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
   async atualizarFotoPerfil(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.usuarioId) {

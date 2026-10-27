@@ -13,6 +13,7 @@ export interface CreateMensagemData {
   conteudo: string;
   tipo?: string;
   midia_url?: string | null;
+  id_resposta?: string | null;
 }
 
 /** Utilizador mínimo exposto no chat (nunca dados sensíveis). */
@@ -31,7 +32,21 @@ export const mensagemSelect = {
   midia_url: true,
   lida: true,
   created_at: true,
+  apagada: true,
+  reacoes: true,
+  id_resposta: true,
   remetente: { select: chatUsuarioSelect },
+  resposta: {
+    select: {
+      id_mensagem: true,
+      id_remetente: true,
+      conteudo: true,
+      tipo: true,
+      midia_url: true,
+      apagada: true,
+      remetente: { select: { nome: true } },
+    },
+  },
 } satisfies Prisma.MensagemSelect;
 
 const participantesInclude = {
@@ -153,6 +168,7 @@ export class ChatRepository {
           conteudo: data.conteudo,
           tipo: data.tipo || 'texto',
           midia_url: data.midia_url ?? null,
+          id_resposta: data.id_resposta ?? null,
         },
         select: mensagemSelect,
       }),
@@ -172,6 +188,10 @@ export class ChatRepository {
 
   async findMessageById(id_mensagem: string) {
     return await this.prisma.mensagem.findUnique({ where: { id_mensagem }, select: mensagemSelect });
+  }
+
+  async updateMessage(id_mensagem: string, data: Prisma.MensagemUpdateInput) {
+    return await this.prisma.mensagem.update({ where: { id_mensagem }, data, select: mensagemSelect });
   }
 
   /** Marca a conversa como lida pelo utilizador. Devolve a data de leitura e nº de mensagens marcadas. */

@@ -30,6 +30,8 @@ export interface ServicoFilters {
   status?: string;
   id_fazedor?: string;
   search?: string;
+  /** Um ou mais tipos de fazedor (ex.: ['agencia', 'modelo_freelancer']). */
+  tipos_fazedor?: string[];
 }
 
 export type ServicoWithRelations = Servico & {
@@ -108,6 +110,10 @@ export class ServicoRepository {
       where.id_fazedor = filters.id_fazedor;
     }
 
+    if (filters?.tipos_fazedor?.length) {
+      where.fazedor = { tipo_fazedor: { in: filters.tipos_fazedor } };
+    }
+
     if (filters?.min_valor !== undefined || filters?.max_valor !== undefined) {
       where.valor = {};
       if (filters.min_valor !== undefined) {
@@ -167,6 +173,10 @@ export class ServicoRepository {
 
     if (filters?.id_fazedor) {
       where.id_fazedor = filters.id_fazedor;
+    }
+
+    if (filters?.tipos_fazedor?.length) {
+      where.fazedor = { tipo_fazedor: { in: filters.tipos_fazedor } };
     }
 
     if (filters?.min_valor !== undefined || filters?.max_valor !== undefined) {
