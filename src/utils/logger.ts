@@ -21,13 +21,11 @@ const logger = winston.createLogger({
   ]
 });
 
-if (process.env.NODE_ENV === 'development') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    )
-  }));
-}
+// Consola sempre activa: em produção (Render/Docker) é o stdout que aparece nos logs do painel.
+logger.add(new winston.transports.Console({
+  format: process.env.NODE_ENV === 'development'
+    ? winston.format.combine(winston.format.colorize(), winston.format.simple())
+    : winston.format.combine(winston.format.timestamp(), winston.format.simple())
+}));
 
 export default logger;
