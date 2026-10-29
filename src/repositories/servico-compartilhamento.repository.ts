@@ -13,7 +13,9 @@ export class ServicoCompartilhamentoRepository {
     id_usuario: string;
     plataforma?: string;
   }): Promise<any> {
-    const link_compartilhado = `${process.env.BASE_URL || 'http://localhost:3000'}/servico/${data.id_servico}`;
+    // Link para o site público (BASE_URL = site web), nunca para a API.
+    const site = (process.env.BASE_URL || process.env.FRONTEND_URL || 'https://appstivy.vercel.app').replace(/\/+$/, '');
+    const link_compartilhado = `${site}/servico/${data.id_servico}`;
 
     return await this.prisma.servicoCompartilhamento.create({
       data: {
