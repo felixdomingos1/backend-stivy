@@ -32,7 +32,7 @@ async function startServer(): Promise<void> {
   }
 
   await emailService.initialize().catch(error => {
-    logger.warn('⚠️ Email service não está disponível:', error.message);
+    logger.warn(`⚠️ Email service não está disponível: ${error?.message ?? error}`);
   });
 
   // Criar servidor HTTP e configurar Socket.IO

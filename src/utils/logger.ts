@@ -3,9 +3,31 @@ import path from 'path';
 
 const logDir = 'logs';
 
+/**
+ * Acrescenta à mensagem os argumentos extra de `logger.x('texto:', erro)`.
+ * Sem isto o winston descarta-os e o log fica sem o motivo do erro.
+ */
+const anexarArgumentos = winston.format((info) => {
+  const extra = (info[Symbol.for('splat') as any] as unknown[] | undefined) ?? [];
+  const partes = extra.map((a) => {
+    if (a instanceof Error) return a.stack || a.message;
+    if (a && typeof a === 'object') {
+      try {
+        return JSON.stringify(a);
+      } catch {
+        return String(a);
+      }
+    }
+    return String(a);
+  });
+  if (partes.length) info.message = `${info.message} ${partes.join(' ')}`;
+  return info;
+});
+
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
   format: winston.format.combine(
+    anexarArgumentos(),
     winston.format.timestamp(),
     winston.format.json(),
     winston.format.prettyPrint()

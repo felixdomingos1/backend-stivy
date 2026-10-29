@@ -15,7 +15,20 @@ export class EmailService {
   private connectionVerified: boolean = false;
   private initializationPromise: Promise<void> | null = null;
 
+  /**
+   * Envio por API HTTPS (Brevo). Usado quando BREVO_API_KEY existe: hospedagens
+   * como o plano gratuito do Render bloqueiam as portas SMTP (25/465/587).
+   */
+  private readonly brevoApiKey = process.env.BREVO_API_KEY?.trim() || undefined;
+
   private constructor() {
+    if (this.brevoApiKey) {
+      this.isConfigured = true;
+      this.connectionVerified = true; // API HTTP: não há ligação SMTP a verificar
+      logger.info('📧 Serviço de email: API Brevo (HTTPS)');
+      return;
+    }
+
     this.isConfigured = this.checkConfiguration();
 
     if (!this.isConfigured) {
@@ -122,7 +135,7 @@ export class EmailService {
       logger.info('✅ Conexão com serviço de email estabelecida com sucesso');
     } catch (error: any) {
       this.connectionVerified = false;
-      logger.error('❌ Conexão com serviço de email falhou:', error.message);
+      logger.error(`❌ Conexão com serviço de email falhou: ${error?.message ?? error}`);
       throw new Error(`Email service unavailable: ${error.message}`);
     }
   }
@@ -135,6 +148,11 @@ export class EmailService {
     if (!this.isConfigured) {
       logger.info(`[EMAIL SIMULADO] Assunto: ${options.subject}`);
       this.logEmailForDevelopment(options);
+      return;
+    }
+
+    if (this.brevoApiKey) {
+      await this.sendViaBrevo(options);
       return;
     }
 
@@ -156,7 +174,7 @@ export class EmailService {
 
       logger.info(`📧 Email enviado para ${options.to} - Message ID: ${info.messageId}`);
     } catch (error: any) {
-      logger.error('❌ Falha no envio de email:', error.message);
+      logger.error(`❌ Falha no envio de email: ${error?.message ?? error}`);
 
       if (error.message.includes('Invalid login') || error.message.includes('535')) {
         this.connectionVerified = false;
@@ -164,6 +182,48 @@ export class EmailService {
       }
 
       throw new Error(`Falha ao enviar email: ${error.message}`);
+    }
+  }
+
+  /** Remetente a partir de EMAIL_FROM/SMTP_FROM ("Nome <email>" ou só o email). */
+  private remetente(): { name: string; email: string } {
+    const raw = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.EMAIL_USER || 'noreply@stivy.com';
+    const m = raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+    return m ? { name: m[1].trim() || 'Stivy', email: m[2].trim() } : { name: 'Stivy', email: raw.trim() };
+  }
+
+  private async sendViaBrevo(options: EmailOptions): Promise<void> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': this.brevoApiKey!,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          sender: this.remetente(),
+          to: [{ email: options.to }],
+          subject: options.subject,
+          htmlContent: options.html,
+          textContent: options.text || this.stripHtml(options.html),
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const detalhe = await res.text().catch(() => '');
+        throw new Error(`Brevo respondeu ${res.status}: ${detalhe.slice(0, 300)}`);
+      }
+      const data: any = await res.json().catch(() => ({}));
+      logger.info(`📧 Email enviado para ${options.to} via Brevo - Message ID: ${data?.messageId ?? '?'}`);
+    } catch (error: any) {
+      const msg = error?.name === 'AbortError' ? 'Timeout de email após 15 segundos' : error?.message ?? String(error);
+      logger.error(`❌ Falha no envio de email (Brevo): ${msg}`);
+      throw new Error(`Falha ao enviar email: ${msg}`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

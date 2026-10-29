@@ -54,6 +54,10 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
 
+      # Email por API HTTPS (o plano free do Render bloqueia SMTP 25/465/587).
+      # Com BREVO_API_KEY definida, o SMTP abaixo é ignorado.
+      - key: BREVO_API_KEY
+        sync: false
       - key: EMAIL_SERVICE
         value: gmail
       - key: EMAIL_USER
