@@ -205,7 +205,7 @@ export const searchValidation = [
 ];
 
 export const listAvaliacoesValidation = [
-  param('id_fazedor')
+  param('id')
     .isUUID()
     .withMessage('ID do fazedor inválido'),
 

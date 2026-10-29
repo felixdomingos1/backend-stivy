@@ -23,24 +23,33 @@ export const connectRedis = async (): Promise<boolean> => {
   }
 
   if (!redisClient) {
-    logger.info(`[REDIS] A ligar a ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`);
+    // REDIS_URL (ex.: "Internal Key Value URL" do Render, redis:// ou rediss://)
+    // tem prioridade sobre REDIS_HOST/REDIS_PORT/REDIS_PASSWORD.
+    const url = process.env.REDIS_URL?.trim();
+    const destino = url
+      ? url.replace(/\/\/[^@/]*@/, '//***@') // não registar a palavra-passe
+      : `${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`;
+    logger.info(`[REDIS] A ligar a ${destino}`);
 
     let ultimoErro = '';
-    redisClient = createClient({
-      ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
-      database: parseInt(process.env.REDIS_DB || '0', 10),
-      socket: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
-        reconnectStrategy: (retries) => {
-          if (retries === 1 || retries % 20 === 0) {
-            logger.warn(`[REDIS] Tentativa de reconexão: ${retries}`);
-          }
-          return Math.min(retries * 200, 30000);
-        },
-        connectTimeout: 10000
+    const reconnectStrategy = (retries: number) => {
+      if (retries === 1 || retries % 20 === 0) {
+        logger.warn(`[REDIS] Tentativa de reconexão: ${retries}`);
       }
-    });
+      return Math.min(retries * 200, 30000);
+    };
+    redisClient = url
+      ? createClient({ url, socket: { reconnectStrategy, connectTimeout: 10000 } })
+      : createClient({
+          ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
+          database: parseInt(process.env.REDIS_DB || '0', 10),
+          socket: {
+            host: process.env.REDIS_HOST || 'localhost',
+            port: parseInt(process.env.REDIS_PORT || '6379'),
+            reconnectStrategy,
+            connectTimeout: 10000
+          }
+        });
 
     redisClient.on('ready', () => {
       logger.info('[REDIS] Redis pronto para uso');

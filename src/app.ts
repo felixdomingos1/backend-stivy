@@ -22,8 +22,10 @@ app.disable('x-powered-by');
 /**
  * CORS:
  *  - CORS_ORIGIN definido: lista separada por vírgulas; aceita curingas (ex.: http://192.168.*), com credentials.
- *  - CORS_ORIGIN vazio: em desenvolvimento permite qualquer origem SEM credentials;
+ *  - CORS_ORIGIN vazio: usa a origem de BASE_URL (o site web), se existir;
+ *    senão, em desenvolvimento permite qualquer origem SEM credentials e
  *    em produção bloqueia pedidos cross-origin de browsers (apps móveis não enviam Origin).
+ *  - Barras finais são ignoradas ("https://site.com/" = "https://site.com").
  */
 const construirCors = (): CorsOptions => {
   const base: CorsOptions = {
@@ -31,7 +33,14 @@ const construirCors = (): CorsOptions => {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   };
 
-  const raw = process.env.CORS_ORIGIN?.trim();
+  const origemBaseUrl = (() => {
+    try {
+      return process.env.BASE_URL ? new URL(process.env.BASE_URL).origin : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const raw = process.env.CORS_ORIGIN?.trim() || origemBaseUrl;
   if (!raw) {
     if (process.env.NODE_ENV === 'production') {
       logger.warn('[CORS] CORS_ORIGIN não definido em produção: pedidos cross-origin de browsers serão bloqueados.');
@@ -40,7 +49,8 @@ const construirCors = (): CorsOptions => {
     return { ...base, origin: '*', credentials: false };
   }
 
-  const entradas = raw.split(',').map(o => o.trim()).filter(Boolean);
+  const entradas = raw.split(',').map(o => o.trim().replace(/\/+$/, '')).filter(Boolean);
+  logger.info(`[CORS] Origens permitidas: ${entradas.join(', ')}`);
   if (entradas.includes('*')) {
     return { ...base, origin: '*', credentials: false };
   }

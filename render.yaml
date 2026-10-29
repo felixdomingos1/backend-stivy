@@ -34,19 +34,18 @@ services:
         value: "60"
       - key: FCM_ENABLED
         value: "false"
+      # URL do site web: links de partilha + CORS do browser
+      - key: BASE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
 
-      - key: REDIS_HOST
+      # URL interno do Key Value (redis://red-xxxx:6379)
+      - key: REDIS_URL
         fromService:
           type: keyvalue
           name: stivy-redis
-          property: host
-      - key: REDIS_PORT
-        fromService:
-          type: keyvalue
-          name: stivy-redis
-          property: port
-      - key: REDIS_DB
-        value: "0"
+          property: connectionString
 
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
