@@ -93,8 +93,6 @@ appendonly.aof
 
 # Docker
 docker-compose.override.yml
-.dockerignore
-*.dockerignore
 
 # Configurações específicas do projeto
 .env.*.local
@@ -158,6 +156,7 @@ dump-*.sql
 
 # Secrets e keys
 *.pem
+!prisma/aiven-ca.pem
 *.key
 *.secret
 *.jwt

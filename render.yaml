@@ -1,0 +1,84 @@
+# Render Blueprint: API (Docker) + Redis (Key Value), ambos no plano free.
+# O MySQL fica fora do Render (o Render não oferece MySQL gerido e o disco
+# do plano free é apagado a cada reinício) -> definir DATABASE_URL no painel.
+services:
+  - type: web
+    name: stivy-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: SALT_ROUNDS
+        value: "10"
+      - key: SESSION_TTL_DAYS
+        value: "7"
+      - key: MAX_FILE_SIZE
+        value: "5242880"
+      - key: CACHE_TTL_SERVICOS
+        value: "300"
+      - key: CACHE_TTL_FAZEDORES
+        value: "600"
+      - key: CACHE_TTL_EVENTOS
+        value: "300"
+      - key: CACHE_TTL_BUSCAS
+        value: "60"
+      - key: FCM_ENABLED
+        value: "false"
+
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: stivy-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: keyvalue
+          name: stivy-redis
+          property: port
+      - key: REDIS_DB
+        value: "0"
+
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
+      - key: EMAIL_SERVICE
+        value: gmail
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+  - type: keyvalue
+    name: stivy-redis
+    plan: free
+    region: frankfurt
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: [] # só acessível pela rede interna do Render

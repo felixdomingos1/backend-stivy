@@ -1,0 +1,10 @@
+node_modules
+dist
+logs
+uploads
+coverage
+.git
+.env
+.env.*
+*.log
+src/__tests__
