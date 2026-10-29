@@ -19,7 +19,24 @@ export class EmailService {
    * Envio por API HTTPS (Brevo). Usado quando BREVO_API_KEY existe: hospedagens
    * como o plano gratuito do Render bloqueiam as portas SMTP (25/465/587).
    */
-  private readonly brevoApiKey = process.env.BREVO_API_KEY?.trim() || undefined;
+  private readonly brevoApiKey = EmailService.normalizarChaveBrevo(process.env.BREVO_API_KEY);
+
+  /**
+   * O painel do Brevo também mostra a chave "embrulhada" em base64
+   * ({"api_key":"xkeysib-..."}); a API só aceita a chave de dentro.
+   */
+  private static normalizarChaveBrevo(raw?: string): string | undefined {
+    const valor = raw?.trim();
+    if (!valor) return undefined;
+    if (valor.startsWith('xkeysib-')) return valor;
+    try {
+      const json = JSON.parse(Buffer.from(valor, 'base64').toString('utf8'));
+      if (typeof json?.api_key === 'string' && json.api_key) return json.api_key.trim();
+    } catch {
+      // não é base64/JSON: usar tal como está
+    }
+    return valor;
+  }
 
   private constructor() {
     if (this.brevoApiKey) {
